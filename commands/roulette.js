@@ -2,6 +2,31 @@ import { SlashCommandBuilder } from "discord.js";
 import { db } from "../firebase.js";
 
 const ALLOWED_CHANNEL_ID = "1434934862430867487";
+const GUILD_ID = "1429845180437102645";
+const ROLE_ID = "1434989027555016755"; // shared role for top 3
+
+async function updateTopRoles(client) {
+  try {
+    const guild = await client.guilds.fetch(GUILD_ID);
+    const members = await guild.members.fetch();
+
+    const snapshot = await db.collection("users").orderBy("balance", "desc").limit(3).get();
+    const topUsers = snapshot.docs.map(doc => doc.id);
+
+    // Remove role from everyone
+    for (const member of members.values()) {
+      await member.roles.remove(ROLE_ID).catch(() => {});
+    }
+
+    // Assign to top 3
+    for (const userId of topUsers) {
+      const member = await guild.members.fetch(userId).catch(() => null);
+      if (member) await member.roles.add(ROLE_ID).catch(() => {});
+    }
+  } catch (err) {
+    console.error("Error updating top roles:", err);
+  }
+}
 
 export const data = new SlashCommandBuilder()
   .setName("roulette")
@@ -67,6 +92,8 @@ export async function execute(interaction) {
     : `lost $${amount}.`;
 
   await interaction.reply(
-    `${mention} spun ${result.color} ${result.number}. You ${outcome} Balance: $${result.balance}`
+    `${mention} spun **${result.color} ${result.number}**. You ${outcome} Balance: $${result.balance.toLocaleString()}`
   );
+
+  await updateTopRoles(interaction.client);
 }
