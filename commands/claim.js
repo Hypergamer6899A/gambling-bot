@@ -3,7 +3,7 @@ import { db } from "../firebase.js";
 import { updateTopRoles } from "../topRoles.js";
 
 const ALLOWED_CHANNEL_ID = "1434934862430867487";
-const BAILOUT_AMOUNT = 1000;            // money given when claiming
+const BAILOUT_AMOUNT = 100;            // money given when claiming
 const CLAIM_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export const data = new SlashCommandBuilder()
