@@ -3,13 +3,14 @@ import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
 import { db } from "./firebase.js";
+import express from "express";
 
 dotenv.config();
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers // required to fetch members
+    GatewayIntentBits.GuildMembers // required to manage roles
   ]
 });
 
@@ -18,11 +19,7 @@ client.commands = new Collection();
 // ----- Config -----
 const ALLOWED_CHANNEL_ID = "1434934862430867487";
 const GUILD_ID = "1429845180437102645";
-const ROLE_IDS = {
-  first: "1434989027555016755",  // replace with distinct top 3 role IDs
-  second: "1434989027555016755",
-  third: "1434989027555016755"
-};
+const TOP_ROLE_ID = "1434989027555016755"; // one shared role for top 3 users
 
 // ----- Load Commands -----
 const foldersPath = path.join(process.cwd(), "commands");
@@ -33,38 +30,49 @@ for (const file of commandFiles) {
   client.commands.set(command.data.name, command);
 }
 
+// ----- Ready Event -----
 client.once("clientReady", async () => {
   console.log(`Logged in as ${client.user.tag}`);
-  await updateTopRoles().catch(console.error);
+  await updateTopRoles();
   client.user.setPresence({
     activities: [{ name: "LETS GO GAMBLING", type: 0 }],
     status: "online"
   });
 });
 
-
-// ----- Update Top Roles -----
+// ----- Top Role Updater -----
 async function updateTopRoles() {
+  console.log("Running updateTopRoles...");
   try {
     const guild = await client.guilds.fetch(GUILD_ID);
+    await guild.members.fetch();
 
-    // Fetch all members safely
-    const members = await guild.members.fetch({ withPresences: false, force: false }).catch(() => new Map());
+    const snapshot = await db.collection("users")
+      .orderBy("balance", "desc")
+      .limit(3)
+      .get();
 
-    // Get top 3 users by balance
-    const snapshot = await db.collection("users").orderBy("balance", "desc").limit(3).get();
     const topUsers = snapshot.docs.map(doc => doc.id);
+    console.log("Top users:", topUsers);
 
-    // Remove roles from everyone first
-    for (const member of members.values()) {
-      await member.roles.remove([ROLE_IDS.first, ROLE_IDS.second, ROLE_IDS.third]).catch(() => {});
+    // remove the top role from everyone
+    for (const member of guild.members.cache.values()) {
+      if (member.roles.cache.has(TOP_ROLE_ID)) {
+        await member.roles.remove(TOP_ROLE_ID).catch(() => {});
+      }
     }
 
-    // Assign roles
-    if (topUsers[0]) (await guild.members.fetch(topUsers[0])).roles.add(ROLE_IDS.first).catch(() => {});
-    if (topUsers[1]) (await guild.members.fetch(topUsers[1])).roles.add(ROLE_IDS.second).catch(() => {});
-    if (topUsers[2]) (await guild.members.fetch(topUsers[2])).roles.add(ROLE_IDS.third).catch(() => {});
+    // assign to top 3
+    for (const id of topUsers) {
+      const member = await guild.members.fetch(id).catch(() => null);
+      if (member) {
+        await member.roles.add(TOP_ROLE_ID).catch(err =>
+          console.error(`Failed to add role to ${id}:`, err.message)
+        );
+      }
+    }
 
+    console.log("Completed updateTopRoles.");
   } catch (err) {
     console.error("Error updating top roles:", err);
   }
@@ -74,7 +82,6 @@ async function updateTopRoles() {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isCommand()) return;
 
-  // Restrict to allowed channel
   if (interaction.channel.id !== ALLOWED_CHANNEL_ID) {
     return interaction.reply({
       content: `You can only use commands in <#${ALLOWED_CHANNEL_ID}>.`,
@@ -87,7 +94,7 @@ client.on("interactionCreate", async (interaction) => {
 
   try {
     await command.execute(interaction);
-    await updateTopRoles(); // safe role update after each command
+    await updateTopRoles(); // refresh leaderboard roles
   } catch (error) {
     console.error(error);
     if (interaction.replied || interaction.deferred)
@@ -97,11 +104,9 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-import express from "express";
-
+// ----- Web Server (for Render) -----
 const app = express();
 const PORT = process.env.PORT || 3000;
-
 app.get("/", (req, res) => res.send("Bot is running."));
 app.listen(PORT, () => console.log(`Listening on port ${PORT}`));
 
