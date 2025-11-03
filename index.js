@@ -94,5 +94,13 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
+import express from "express";
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get("/", (req, res) => res.send("Bot is running."));
+app.listen(PORT, () => console.log(`Listening on port ${PORT}`));
+
 // ----- Login -----
 client.login(process.env.TOKEN);
