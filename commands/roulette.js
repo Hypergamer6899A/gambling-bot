@@ -64,5 +64,5 @@ export async function execute(interaction, client) {
   await interaction.editReply(`${mention} spun ${result.color} ${result.number}. You ${outcome} Balance: $${result.balance}`);
 
   // Update top 3 role after each spin
-  await updateTopRoles(client);
+  await updateTopRoles(interaction.client);
 }
