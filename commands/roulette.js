@@ -1,13 +1,14 @@
 import { SlashCommandBuilder } from "discord.js";
 import { db } from "../firebase.js";
 
-const ALLOWED_CHANNEL_ID = "1434934862430867487"; // replace with your channel
-const GUILD_ID = "1429845180437102645";             // replace with your server
+const ALLOWED_CHANNEL_ID = "1434934862430867487";
+const GUILD_ID = "1429845180437102645";
 const ROLE_IDS = {
   first: "1434989027555016755",
   second: "1434989027555016755",
   third: "1434989027555016755"
 };
+
 async function updateTopRoles(client) {
   try {
     const guild = await client.guilds.fetch(GUILD_ID);
@@ -33,7 +34,7 @@ export const data = new SlashCommandBuilder()
   .setDescription("Spin the roulette wheel")
   .addStringOption(opt =>
     opt.setName("bet")
-      .setDescription("red, black, odd, or even")
+      .setDescription("red, black, odd, even, or green")
       .setRequired(true))
   .addIntegerOption(opt =>
     opt.setName("amount")
@@ -50,13 +51,13 @@ export async function execute(interaction) {
 
   const bet = interaction.options.getString("bet").toLowerCase();
   const amount = interaction.options.getInteger("amount");
-  const validBets = ["red", "black", "odd", "even"];
+  const validBets = ["red", "black", "odd", "even", "green"];
   if (!validBets.includes(bet)) return interaction.reply("Invalid bet type.");
 
   const id = interaction.user.id;
   const userRef = db.collection("users").doc(id);
 
-  // --- Transaction for safe balance update ---
+  // --- Safe transaction ---
   const result = await db.runTransaction(async (t) => {
     const doc = await t.get(userRef);
     let balance = doc.exists ? doc.data().balance : 1000;
@@ -67,22 +68,39 @@ export async function execute(interaction) {
     const color = number === 0 ? "green" : (number % 2 === 0 ? "black" : "red");
 
     let win = false;
-    if (bet === color) win = true;
-    if (bet === "odd" && number % 2 === 1) win = true;
-    if (bet === "even" && number % 2 === 0 && number !== 0) win = true;
+    let multiplier = 1;
 
-    const change = win ? amount : -amount;
+    if (bet === "green" && color === "green") {
+      win = true;
+      multiplier = 10;
+    } else if (bet === color) {
+      win = true;
+      multiplier = 2;
+    } else if (bet === "odd" && number % 2 === 1) {
+      win = true;
+      multiplier = 2;
+    } else if (bet === "even" && number % 2 === 0 && number !== 0) {
+      win = true;
+      multiplier = 2;
+    }
+
+    const change = win ? amount * (multiplier - 1) : -amount;
     balance += change;
 
     t.set(userRef, { balance });
-    return { win, balance, number, color, change };
-  }).catch(err => {
-    return { error: err.message };
-  });
+    return { win, balance, number, color, change, multiplier };
+  }).catch(err => ({ error: err.message }));
 
   if (result.error) return interaction.reply(result.error);
 
-  await interaction.reply(`${interaction.user.username} spun ${result.color} ${result.number}. ${result.win ? `You won $${amount}!` : `You lost $${amount}.`} Balance: $${result.balance}`);
+  const mention = `<@${interaction.user.id}>`;
+  const message = `${mention} spun **${result.color} ${result.number}**. ${
+    result.win
+      ? `You won $${(result.change).toLocaleString()} (${result.multiplier}×)!`
+      : `You lost $${(-result.change).toLocaleString()}.`
+  } New balance: $${result.balance.toLocaleString()}.`;
+
+  await interaction.reply(message);
 
   // Update top roles
   updateTopRoles(interaction.client);
