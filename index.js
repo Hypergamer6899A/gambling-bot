@@ -7,18 +7,21 @@ import { db } from "./firebase.js";
 dotenv.config();
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers // required to fetch members
+  ]
 });
 
 client.commands = new Collection();
 
 // ----- Config -----
-const ALLOWED_CHANNEL_ID = "1434934862430867487"; // replace with your channel
-const GUILD_ID = "1429845180437102645";             // replace with your server
+const ALLOWED_CHANNEL_ID = "1434934862430867487";
+const GUILD_ID = "1429845180437102645";
 const ROLE_IDS = {
-  first: "1434989027555016755",
-  second: "1434989027555016755",
-  third: "1434989027555016755"
+  first: "ROLE_ID_1",  // replace with distinct top 3 role IDs
+  second: "ROLE_ID_2",
+  third: "ROLE_ID_3"
 };
 
 // ----- Load Commands -----
@@ -31,16 +34,19 @@ for (const file of commandFiles) {
 }
 
 // ----- Ready -----
-client.once("ready", () => {
+client.on("ready", async () => {
   console.log(`Logged in as ${client.user.tag}`);
-  updateTopRoles(); // optional: run on start
+  // run once after ready
+  await updateTopRoles().catch(console.error);
 });
 
 // ----- Update Top Roles -----
 async function updateTopRoles() {
   try {
     const guild = await client.guilds.fetch(GUILD_ID);
-    const members = await guild.members.fetch();
+
+    // Fetch all members safely
+    const members = await guild.members.fetch({ withPresences: false, force: false }).catch(() => new Map());
 
     // Get top 3 users by balance
     const snapshot = await db.collection("users").orderBy("balance", "desc").limit(3).get();
@@ -78,10 +84,7 @@ client.on("interactionCreate", async (interaction) => {
 
   try {
     await command.execute(interaction);
-
-    // After every command, update top roles
-    updateTopRoles();
-
+    await updateTopRoles(); // safe role update after each command
   } catch (error) {
     console.error(error);
     if (interaction.replied || interaction.deferred)
