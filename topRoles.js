@@ -1,22 +1,19 @@
-import { db } from "../firebase.js";
+import { db } from "./firebase.js";
 
-export async function updateTopRoles(client, GUILD_ID, TOP_ROLE_ID) {
+const GUILD_ID = "1429845180437102645";
+const TOP_ROLE_ID = "1434989027555016755";
+
+export async function updateTopRoles(client) {
   try {
     const guild = await client.guilds.fetch(GUILD_ID);
     await guild.members.fetch();
 
-    const snapshot = await db.collection("users")
-      .orderBy("balance", "desc")
-      .limit(3)
-      .get();
-
+    const snapshot = await db.collection("users").orderBy("balance", "desc").limit(3).get();
     const topUsers = snapshot.docs.map(doc => doc.id);
 
     // Remove top role from everyone
     for (const member of guild.members.cache.values()) {
-      if (member.roles.cache.has(TOP_ROLE_ID)) {
-        await member.roles.remove(TOP_ROLE_ID).catch(() => {});
-      }
+      if (member.roles.cache.has(TOP_ROLE_ID)) await member.roles.remove(TOP_ROLE_ID).catch(() => {});
     }
 
     // Assign top role to top 3
