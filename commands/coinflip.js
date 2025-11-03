@@ -59,5 +59,5 @@ export async function execute(interaction) {
 const outcome = result.win ? `won $${amount}!` : `lost $${amount}.`;
 await interaction.editReply(`${mention} flipped ${result.flip} and ${outcome} Balance: $${result.balance}`);
 
-  await updateTopRoles();
+  await updateTopRoles(interaction.client);
 }
