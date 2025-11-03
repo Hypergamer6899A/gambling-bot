@@ -1,16 +1,14 @@
 import { SlashCommandBuilder } from "discord.js";
 import { db } from "../firebase.js";
 
-// ----- Config -----
-const ALLOWED_CHANNEL_ID = "1434934862430867487"; // replace with your channel
-const GUILD_ID = "1429845180437102645";             // replace with your server
+const ALLOWED_CHANNEL_ID = "YOUR_CHANNEL_ID";
+const GUILD_ID = "YOUR_GUILD_ID";
 const ROLE_IDS = {
-  first: "1434989027555016755",
-  second: "1434989027555016755",
-  third: "1434989027555016755"
+  first: "ROLE_ID_1",
+  second: "ROLE_ID_2",
+  third: "ROLE_ID_3"
 };
 
-// ----- Top Roles Update -----
 async function updateTopRoles(client) {
   try {
     const guild = await client.guilds.fetch(GUILD_ID);
@@ -26,13 +24,11 @@ async function updateTopRoles(client) {
     if (topUsers[0]) (await guild.members.fetch(topUsers[0])).roles.add(ROLE_IDS.first).catch(() => {});
     if (topUsers[1]) (await guild.members.fetch(topUsers[1])).roles.add(ROLE_IDS.second).catch(() => {});
     if (topUsers[2]) (await guild.members.fetch(topUsers[2])).roles.add(ROLE_IDS.third).catch(() => {});
-
   } catch (err) {
     console.error("Error updating top roles:", err);
   }
 }
 
-// ----- Command -----
 export const data = new SlashCommandBuilder()
   .setName("roulette")
   .setDescription("Spin the roulette wheel")
@@ -46,7 +42,6 @@ export const data = new SlashCommandBuilder()
       .setRequired(true));
 
 export async function execute(interaction) {
-  // Restrict to channel
   if (interaction.channel.id !== ALLOWED_CHANNEL_ID) {
     return interaction.reply({
       content: `You can only use this command in <#${ALLOWED_CHANNEL_ID}>.`,
@@ -60,26 +55,36 @@ export async function execute(interaction) {
   if (!validBets.includes(bet)) return interaction.reply("Invalid bet type.");
 
   const id = interaction.user.id;
-  const ref = db.collection("users").doc(id);
-  const doc = await ref.get();
-  let balance = doc.exists ? doc.data().balance : 1000;
+  const userRef = db.collection("users").doc(id);
 
-  if (amount > balance) return interaction.reply("Not enough money.");
+  // --- Transaction for safe balance update ---
+  const result = await db.runTransaction(async (t) => {
+    const doc = await t.get(userRef);
+    let balance = doc.exists ? doc.data().balance : 1000;
 
-  const number = Math.floor(Math.random() * 37);
-  const color = number === 0 ? "green" : (number % 2 === 0 ? "black" : "red");
+    if (amount > balance) throw new Error("Not enough money.");
 
-  let win = false;
-  if (bet === color) win = true;
-  if (bet === "odd" && number % 2 === 1) win = true;
-  if (bet === "even" && number % 2 === 0 && number !== 0) win = true;
+    const number = Math.floor(Math.random() * 37);
+    const color = number === 0 ? "green" : (number % 2 === 0 ? "black" : "red");
 
-  const result = win ? amount : -amount;
-  balance += result;
-  await ref.set({ balance });
+    let win = false;
+    if (bet === color) win = true;
+    if (bet === "odd" && number % 2 === 1) win = true;
+    if (bet === "even" && number % 2 === 0 && number !== 0) win = true;
 
-  await interaction.reply(`${interaction.user.username} spun ${color} ${number}. ${win ? `You won $${amount}!` : `You lost $${amount}.`} Balance: $${balance}`);
+    const change = win ? amount : -amount;
+    balance += change;
 
-  // Update top roles after each spin
+    t.set(userRef, { balance });
+    return { win, balance, number, color, change };
+  }).catch(err => {
+    return { error: err.message };
+  });
+
+  if (result.error) return interaction.reply(result.error);
+
+  await interaction.reply(`${interaction.user.username} spun ${result.color} ${result.number}. ${result.win ? `You won $${amount}!` : `You lost $${amount}.`} Balance: $${result.balance}`);
+
+  // Update top roles
   updateTopRoles(interaction.client);
 }
