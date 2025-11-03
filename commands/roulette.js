@@ -12,7 +12,7 @@ export const data = new SlashCommandBuilder()
       .setRequired(true))
   .addIntegerOption(opt =>
     opt.setName("amount")
-      .setDescription("Bet amount")
+      .setDescription("Bet amount (must be > 0)")
       .setRequired(true));
 
 export async function execute(interaction) {
@@ -26,8 +26,12 @@ export async function execute(interaction) {
   const bet = interaction.options.getString("bet").toLowerCase();
   const amount = interaction.options.getInteger("amount");
   const validBets = ["red", "black", "green", "odd", "even"];
+
   if (!validBets.includes(bet))
     return interaction.reply("Invalid bet type.");
+
+  if (amount <= 0)
+    return interaction.reply("Bet amount must be greater than 0.");
 
   const id = interaction.user.id;
   const userRef = db.collection("users").doc(id);
