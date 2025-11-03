@@ -55,8 +55,9 @@ export async function execute(interaction) {
 
   if (result.error) return interaction.editReply(result.error);
 
-  const outcome = result.win ? `won $${amount}!` : `lost $${amount}.`;
-  await interaction.editReply(`${interaction.user.username} flipped ${result.flip} and ${outcome} Balance: $${result.balance}`);
+  const mention = `<@${interaction.user.id}>`;
+const outcome = result.win ? `won $${amount}!` : `lost $${amount}.`;
+await interaction.editReply(`${mention} flipped ${result.flip} and ${outcome} Balance: $${result.balance}`);
 
   await updateTopRoles();
 }
