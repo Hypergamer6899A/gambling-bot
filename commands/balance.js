@@ -8,8 +8,14 @@ export const data = new SlashCommandBuilder()
   .setDescription("Check your balance");
 
 export async function execute(interaction) {
-  if (interaction.channel.id !== ALLOWED_CHANNEL_ID)
-    return interaction.reply({ content: `You can only use this command in <#${ALLOWED_CHANNEL_ID}>.`, ephemeral: true });
+  if (interaction.channel.id !== ALLOWED_CHANNEL_ID) {
+    return interaction.reply({
+      content: `You can only use this command in <#${ALLOWED_CHANNEL_ID}>.`,
+      ephemeral: true
+    });
+  }
+
+  await interaction.deferReply();
 
   const id = interaction.user.id;
   const ref = db.collection("users").doc(id);
@@ -17,7 +23,7 @@ export async function execute(interaction) {
 
   let balance = 1000;
   if (doc.exists) balance = doc.data().balance;
-  else await ref.set({ balance });
+  else await ref.set({ balance, username: interaction.user.username });
 
-  await interaction.reply(`<@${id}>, you have $${balance.toLocaleString()}.`);
+  await interaction.editReply(`<@${id}>, you have $${balance.toLocaleString()}.`);
 }
