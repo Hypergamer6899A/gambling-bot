@@ -1,8 +1,10 @@
 import { SlashCommandBuilder } from "discord.js";
 import { db } from "../firebase.js";
-import { client, updateTopRoles } from "../index.js"; // make sure updateTopRoles is exported
+import { updateTopRoles } from "../utils/topRoles.js";
 
 const ALLOWED_CHANNEL_ID = "1434934862430867487";
+const GUILD_ID = "1429845180437102645";
+const TOP_ROLE_ID = "1434989027555016755";
 
 export const data = new SlashCommandBuilder()
   .setName("roulette")
@@ -63,6 +65,6 @@ export async function execute(interaction) {
 
   await interaction.editReply(`${mention} spun ${result.color} ${result.number}. You ${outcome} Balance: $${result.balance}`);
 
-  // Update top 3 role after each spin
-  await updateTopRoles();
+  // Update top 3 role after spin
+  await updateTopRoles(interaction.client, GUILD_ID, TOP_ROLE_ID);
 }
