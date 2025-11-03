@@ -37,7 +37,7 @@ client.once("clientReady", async () => {
   console.log(`Logged in as ${client.user.tag}`);
   await updateTopRoles().catch(console.error);
   client.user.setPresence({
-    activities: [{ name: "the roulette wheel", type: 0 }],
+    activities: [{ name: "LETS GO GAMBLING", type: 0 }],
     status: "online"
   });
 });
