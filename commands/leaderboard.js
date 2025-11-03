@@ -8,18 +8,24 @@ export const data = new SlashCommandBuilder()
   .setDescription("Top 5 richest users");
 
 export async function execute(interaction) {
-  if (interaction.channel.id !== ALLOWED_CHANNEL_ID)
-    return interaction.reply({ content: `You can only use this command in <#${ALLOWED_CHANNEL_ID}>.`, ephemeral: true });
+  if (interaction.channel.id !== ALLOWED_CHANNEL_ID) {
+    return interaction.reply({
+      content: `You can only use this command in <#${ALLOWED_CHANNEL_ID}>.`,
+      ephemeral: true
+    });
+  }
+
+  await interaction.deferReply();
 
   const snapshot = await db.collection("users").orderBy("balance", "desc").limit(5).get();
-  if (snapshot.empty) return interaction.reply("No users yet.");
+  if (snapshot.empty) return interaction.editReply("No users yet.");
 
   let reply = "**🏆 Top 5 Richest Players 🏆**\n";
   let i = 1;
   snapshot.forEach(doc => {
-    reply += `${i}. ${doc.id} — $${doc.data().balance.toLocaleString()}\n`;
+    reply += `${i}. ${doc.data().username || doc.id} — $${doc.data().balance.toLocaleString()}\n`;
     i++;
   });
 
-  await interaction.reply(reply);
+  await interaction.editReply(reply);
 }
