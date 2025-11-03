@@ -8,6 +8,7 @@
     "express": "^4.18.2"
   },
   "scripts": {
-    "start": "node index.js"
-  }
+  "prestart": "node deploy-commands.js",
+  "start": "node index.js"
+}
 }
