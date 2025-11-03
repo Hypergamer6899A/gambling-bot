@@ -2,12 +2,12 @@ import { SlashCommandBuilder } from "discord.js";
 import { db } from "../firebase.js";
 
 // ----- Config -----
-const ALLOWED_CHANNEL_ID = "YOUR_CHANNEL_ID"; // same as in index.js
-const GUILD_ID = "YOUR_GUILD_ID";
+const ALLOWED_CHANNEL_ID = "1434934862430867487"; // replace with your channel
+const GUILD_ID = "1429845180437102645";             // replace with your server
 const ROLE_IDS = {
-  first: "ROLE_ID_1",
-  second: "ROLE_ID_2",
-  third: "ROLE_ID_3"
+  first: "1434989027555016755",
+  second: "1434989027555016755",
+  third: "1434989027555016755"
 };
 
 // ----- Top Roles Update -----
