@@ -22,10 +22,20 @@ export async function execute(interaction) {
 
   let reply = "**🏆 Top 5 Richest Players 🏆**\n";
   let i = 1;
-  snapshot.forEach(doc => {
-    reply += `${i}. ${doc.data().username || doc.id} — $${doc.data().balance.toLocaleString()}\n`;
+
+  for (const doc of snapshot.docs) {
+    let username = doc.data().username || doc.id;
+
+    try {
+      const member = await interaction.guild.members.fetch(doc.id);
+      username = member.user.username; // Use Discord username if available
+    } catch {
+      // fallback to stored username in DB or raw ID
+    }
+
+    reply += `${i}. ${username} — $${doc.data().balance.toLocaleString()}\n`;
     i++;
-  });
+  }
 
   await interaction.editReply(reply);
 }
