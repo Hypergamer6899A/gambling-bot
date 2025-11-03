@@ -8,12 +8,8 @@ export const data = new SlashCommandBuilder()
   .setDescription("Check your balance");
 
 export async function execute(interaction) {
-  if (interaction.channel.id !== ALLOWED_CHANNEL_ID) {
-    return interaction.reply({
-      content: `You can only use this command in <#${ALLOWED_CHANNEL_ID}>.`,
-      ephemeral: true
-    });
-  }
+  if (interaction.channel.id !== ALLOWED_CHANNEL_ID)
+    return interaction.reply({ content: `You can only use this command in <#${ALLOWED_CHANNEL_ID}>.`, ephemeral: true });
 
   const id = interaction.user.id;
   const ref = db.collection("users").doc(id);
