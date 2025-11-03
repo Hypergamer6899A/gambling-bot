@@ -10,7 +10,7 @@ dotenv.config();
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers // required to manage roles
+    GatewayIntentBits.GuildMembers
   ]
 });
 
@@ -19,12 +19,11 @@ client.commands = new Collection();
 // ----- Config -----
 const ALLOWED_CHANNEL_ID = "1434934862430867487";
 const GUILD_ID = "1429845180437102645";
-const TOP_ROLE_ID = "1434989027555016755"; // one shared role for top 3 users
+const TOP_ROLE_ID = "1434989027555016755";
 
 // ----- Load Commands -----
 const foldersPath = path.join(process.cwd(), "commands");
-const commandFiles = fs.readdirSync(foldersPath).filter(file => file.endsWith(".js"));
-
+const commandFiles = fs.readdirSync(foldersPath).filter(f => f.endsWith(".js"));
 for (const file of commandFiles) {
   const command = await import(`./commands/${file}`);
   client.commands.set(command.data.name, command);
@@ -42,37 +41,23 @@ client.once("clientReady", async () => {
 
 // ----- Top Role Updater -----
 async function updateTopRoles() {
-  console.log("Running updateTopRoles...");
   try {
     const guild = await client.guilds.fetch(GUILD_ID);
     await guild.members.fetch();
 
-    const snapshot = await db.collection("users")
-      .orderBy("balance", "desc")
-      .limit(3)
-      .get();
-
+    const snapshot = await db.collection("users").orderBy("balance", "desc").limit(3).get();
     const topUsers = snapshot.docs.map(doc => doc.id);
-    console.log("Top users:", topUsers);
 
-    // remove the top role from everyone
+    // Remove the top role from everyone
     for (const member of guild.members.cache.values()) {
-      if (member.roles.cache.has(TOP_ROLE_ID)) {
-        await member.roles.remove(TOP_ROLE_ID).catch(() => {});
-      }
+      if (member.roles.cache.has(TOP_ROLE_ID)) await member.roles.remove(TOP_ROLE_ID).catch(() => {});
     }
 
-    // assign to top 3
+    // Assign top role to top 3
     for (const id of topUsers) {
       const member = await guild.members.fetch(id).catch(() => null);
-      if (member) {
-        await member.roles.add(TOP_ROLE_ID).catch(err =>
-          console.error(`Failed to add role to ${id}:`, err.message)
-        );
-      }
+      if (member) await member.roles.add(TOP_ROLE_ID).catch(() => {});
     }
-
-    console.log("Completed updateTopRoles.");
   } catch (err) {
     console.error("Error updating top roles:", err);
   }
@@ -82,33 +67,27 @@ async function updateTopRoles() {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isCommand()) return;
 
-  if (interaction.channel.id !== ALLOWED_CHANNEL_ID) {
-    return interaction.reply({
-      content: `You can only use commands in <#${ALLOWED_CHANNEL_ID}>.`,
-      ephemeral: true
-    });
-  }
+  if (interaction.channel.id !== ALLOWED_CHANNEL_ID)
+    return interaction.reply({ content: `You can only use commands in <#${ALLOWED_CHANNEL_ID}>.`, ephemeral: true });
 
   const command = client.commands.get(interaction.commandName);
   if (!command) return;
 
   try {
     await command.execute(interaction);
-    await updateTopRoles(); // refresh leaderboard roles
+    await updateTopRoles();
   } catch (error) {
     console.error(error);
-    if (interaction.replied || interaction.deferred)
-      await interaction.followUp({ content: "Error executing command.", ephemeral: true });
-    else
-      await interaction.reply({ content: "Error executing command.", ephemeral: true });
+    const msg = { content: "Error executing command.", ephemeral: true };
+    if (interaction.replied || interaction.deferred) await interaction.followUp(msg);
+    else await interaction.reply(msg);
   }
 });
 
-// ----- Web Server (for Render) -----
+// ----- Web Server (Render) -----
 const app = express();
-const PORT = process.env.PORT || 3000;
 app.get("/", (req, res) => res.send("Bot is running."));
-app.listen(PORT, () => console.log(`Listening on port ${PORT}`));
+app.listen(process.env.PORT || 3000, () => console.log(`Listening on port ${process.env.PORT || 3000}`));
 
 // ----- Login -----
 client.login(process.env.TOKEN);
