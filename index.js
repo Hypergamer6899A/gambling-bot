@@ -19,9 +19,9 @@ client.commands = new Collection();
 const ALLOWED_CHANNEL_ID = "1434934862430867487";
 const GUILD_ID = "1429845180437102645";
 const ROLE_IDS = {
-  first: "ROLE_ID_1",  // replace with distinct top 3 role IDs
-  second: "ROLE_ID_2",
-  third: "ROLE_ID_3"
+  first: "1434989027555016755",  // replace with distinct top 3 role IDs
+  second: "1434989027555016755",
+  third: "1434989027555016755"
 };
 
 // ----- Load Commands -----
