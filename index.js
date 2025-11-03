@@ -33,12 +33,15 @@ for (const file of commandFiles) {
   client.commands.set(command.data.name, command);
 }
 
-// ----- Ready -----
-client.on("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`Logged in as ${client.user.tag}`);
-  // run once after ready
   await updateTopRoles().catch(console.error);
+  client.user.setPresence({
+    activities: [{ name: "the roulette wheel", type: 0 }],
+    status: "online"
+  });
 });
+
 
 // ----- Update Top Roles -----
 async function updateTopRoles() {
