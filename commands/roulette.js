@@ -1,16 +1,22 @@
 import { SlashCommandBuilder } from "discord.js";
 import { db } from "../firebase.js";
-import { updateTopRoles } from "../../topRoles.js"; // adjust path for root-level
+import { updateTopRoles } from "../topRoles.js";
 
 const ALLOWED_CHANNEL_ID = "1434934862430867487";
 
 export const data = new SlashCommandBuilder()
   .setName("roulette")
   .setDescription("Spin the roulette wheel")
-  .addStringOption(opt => opt.setName("bet").setDescription("red, black, green, odd, or even").setRequired(true))
-  .addIntegerOption(opt => opt.setName("amount").setDescription("Bet amount (must be > 0)").setRequired(true));
+  .addStringOption(opt =>
+    opt.setName("bet")
+      .setDescription("red, black, green, odd, or even")
+      .setRequired(true))
+  .addIntegerOption(opt =>
+    opt.setName("amount")
+      .setDescription("Bet amount (must be > 0)")
+      .setRequired(true));
 
-export async function execute(interaction) {
+export async function execute(interaction, client) {
   if (interaction.channel.id !== ALLOWED_CHANNEL_ID) {
     return interaction.reply({ content: `You can only use this command in <#${ALLOWED_CHANNEL_ID}>.`, ephemeral: true });
   }
@@ -57,6 +63,6 @@ export async function execute(interaction) {
 
   await interaction.editReply(`${mention} spun ${result.color} ${result.number}. You ${outcome} Balance: $${result.balance}`);
 
-  // Update top 3 role after spin
-  await updateTopRoles();
+  // Update top 3 role after each spin
+  await updateTopRoles(client);
 }
