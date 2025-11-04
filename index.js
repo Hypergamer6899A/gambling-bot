@@ -74,6 +74,11 @@ client.on("interactionCreate", async interaction => {
     }
   }
 });
+// Keepalive server to bypass Render port scan
+const app = express();
+app.get('/', (_, res) => res.send('OK'));
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(`🌐 Keepalive running on port ${PORT}`));
 
 // --- Login ---
 client.login(process.env.TOKEN);
