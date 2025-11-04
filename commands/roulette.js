@@ -7,58 +7,55 @@ const ALLOWED_CHANNEL_ID = "1434934862430867487";
 export const data = new SlashCommandBuilder()
   .setName("roulette")
   .setDescription("Spin the roulette wheel")
-  .addStringOption(opt=>opt.setName("bet").setDescription("red, black, green, odd, or even").setRequired(true))
-  .addIntegerOption(opt=>opt.setName("amount").setDescription("Bet amount (>0)").setRequired(true));
+  .addStringOption(opt => opt.setName("bet").setDescription("red, black, green, odd, or even").setRequired(true))
+  .addIntegerOption(opt => opt.setName("amount").setDescription("Bet amount (>0)").setRequired(true));
 
-export async function execute(interaction){
-  try{
-    if(interaction.channel.id !== ALLOWED_CHANNEL_ID)
-      return interaction.reply({ content:`You can only use this command in <#${ALLOWED_CHANNEL_ID}>.`, ephemeral:true });
+export async function execute(interaction) {
+  try {
+    if (interaction.channel.id !== ALLOWED_CHANNEL_ID)
+      return interaction.reply({ content: `You can only use this command in <#${ALLOWED_CHANNEL_ID}>.`, ephemeral: true });
 
     await interaction.deferReply();
 
     const bet = interaction.options.getString("bet").toLowerCase();
     const amount = interaction.options.getInteger("amount");
-    const validBets=["red","black","green","odd","even"];
-    if(!validBets.includes(bet)) return interaction.editReply("Invalid bet type.");
-    if(amount<=0) return interaction.editReply("Bet amount must be greater than 0.");
+    const validBets = ["red","black","green","odd","even"];
+
+    if (!validBets.includes(bet)) return interaction.editReply("Invalid bet type.");
+    if (amount <= 0) return interaction.editReply("Bet amount must be greater than 0.");
 
     const id = interaction.user.id;
     const userRef = db.collection("users").doc(id);
 
-    const result = await db.runTransaction(async t=>{
+    const result = await db.runTransaction(async t => {
       const doc = await t.get(userRef);
       let balance = doc.exists ? doc.data().balance : 1000;
-      if(amount>balance) throw new Error("Not enough money.");
+      if (amount > balance) throw new Error("Not enough money.");
 
-      const number = Math.floor(Math.random()*37);
-      const color = number===0?"green":(number%2===0?"black":"red");
+      const number = Math.floor(Math.random() * 37);
+      const color = number === 0 ? "green" : (number % 2 === 0 ? "black" : "red");
 
-      let win=false,multiplier=0;
-      if(bet==="green" && color==="green"){ win=true; multiplier=10; }
-      else if(bet===color){ win=true; multiplier=2; }
-      else if(bet==="odd" && number%2===1){ win=true; multiplier=2; }
-      else if(bet==="even" && number%2===0 && number!==0){ win=true; multiplier=2; }
+      let win = false, multiplier = 0;
+      if (bet === "green" && color === "green") { win = true; multiplier = 10; }
+      else if (bet === color) { win = true; multiplier = 2; }
+      else if (bet === "odd" && number % 2 === 1) { win = true; multiplier = 2; }
+      else if (bet === "even" && number % 2 === 0 && number !== 0) { win = true; multiplier = 2; }
 
-      const change = win?amount*(multiplier-1):-amount;
+      const change = win ? amount * (multiplier - 1) : -amount;
       balance += change;
-      t.set(userRef,{balance,username:interaction.user.username});
-      return { win, balance, number, color, change, multiplier };
-    }).catch(err=>({error:err.message}));
 
-    if(result.error) return interaction.editReply(result.error);
+      t.set(userRef, { balance, username: interaction.user.username }, { merge: true });
+      return { win, balance, number, color, change, multiplier };
+    });
 
     const mention = `<@${id}>`;
-    const outcome = result.win?`won $${amount*(result.multiplier-1)} (${result.multiplier}x)!`:`lost $${amount}.`;
+    const outcome = result.win ? `won $${amount*(result.multiplier-1)} (${result.multiplier}x)!` : `lost $${amount}.`;
 
     await interaction.editReply(`${mention} spun ${result.color} ${result.number}. You ${outcome} Balance: $${result.balance}`);
-    await updateTopRoles(interaction.client);
 
-  } catch(err){
+    await updateTopRoles(interaction.client);
+  } catch (err) {
     console.error(err);
-    try{
-      if(interaction.deferred) await interaction.editReply("Error running roulette.");
-      else await interaction.reply({content:"Error running roulette.", ephemeral:true});
-    } catch {}
+    try { await interaction.editReply(err.message || "Error spinning roulette."); } catch {}
   }
 }
