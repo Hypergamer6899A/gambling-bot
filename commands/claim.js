@@ -12,44 +12,38 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction) {
   try {
-    if(interaction.channel.id !== ALLOWED_CHANNEL_ID)
-      return interaction.reply({ content:`You can only use this command in <#${ALLOWED_CHANNEL_ID}>.`, ephemeral:true });
+    if (interaction.channel.id !== ALLOWED_CHANNEL_ID)
+      return interaction.reply({ content: `You can only use this command in <#${ALLOWED_CHANNEL_ID}>.`, ephemeral: true });
 
-    await interaction.deferReply({ ephemeral:true });
+    await interaction.deferReply();
 
     const id = interaction.user.id;
     const ref = db.collection("users").doc(id);
 
-    const result = await db.runTransaction(async t=>{
+    const result = await db.runTransaction(async t => {
       const doc = await t.get(ref);
-      const data = doc.exists ? doc.data() : { balance:100, lastClaim:0 };
+      const data = doc.exists ? doc.data() : { balance: 100 };
       const balance = data.balance ?? 100;
       const lastClaim = data.lastClaim ?? 0;
       const now = Date.now();
 
-      if(balance>0) throw new Error("You are not broke. Claim only available when balance is $0 or less.");
-      if(now - lastClaim < CLAIM_COOLDOWN_MS){
-        const msLeft = CLAIM_COOLDOWN_MS - (now-lastClaim);
-        const hours = Math.floor(msLeft/(60*60*1000));
-        const minutes = Math.floor((msLeft%(60*60*1000))/(60*1000));
+      if (balance > 0) throw new Error("You are not broke. Claim only works when your balance is $0 or less.");
+      if (now - lastClaim < CLAIM_COOLDOWN_MS) {
+        const msLeft = CLAIM_COOLDOWN_MS - (now - lastClaim);
+        const hours = Math.floor(msLeft / (60*60*1000));
+        const minutes = Math.floor((msLeft % (60*60*1000)) / (60*1000));
         throw new Error(`You can claim again in ${hours}h ${minutes}m.`);
       }
 
-      const newBalance = (balance||0) + BAILOUT_AMOUNT;
-      t.set(ref,{balance:newBalance, username:interaction.user.username, lastClaim:now},{merge:true});
-      return { newBalance };
-    }).catch(err=>({error:err.message}));
+      const newBalance = (balance || 0) + BAILOUT_AMOUNT;
+      t.set(ref, { balance: newBalance, username: interaction.user.username, lastClaim: now }, { merge: true });
+      return newBalance;
+    });
 
-    if(result.error) return interaction.editReply(result.error);
-
-    await interaction.editReply(`<@${id}> received $${BAILOUT_AMOUNT.toLocaleString()} as a bailout. New balance: $${result.newBalance.toLocaleString()}`);
+    await interaction.editReply(`You have claimed $${BAILOUT_AMOUNT}. New balance: $${result}`);
     await updateTopRoles(interaction.client);
-
-  } catch(err) {
+  } catch (err) {
     console.error(err);
-    try{
-      if(interaction.deferred) await interaction.editReply("Error executing claim.");
-      else await interaction.reply({content:"Error executing claim.", ephemeral:true});
-    } catch {}
+    try { await interaction.editReply(err.message || "Error claiming bailout."); } catch {}
   }
 }
