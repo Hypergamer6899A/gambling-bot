@@ -63,13 +63,19 @@ client.on("interactionCreate", async (interaction) => {
     await command.execute(interaction, client);
   } catch (err) {
     console.error(`❌ Error in /${interaction.commandName}:`, err);
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: "Error executing command.", ephemeral: true });
-    } else {
-      await interaction.editReply({ content: "Error executing command.", components: [] });
-    }
+
+    // Always try editReply first, fallback to reply only if nothing was sent yet
+    try {
+      if (interaction.replied || interaction.deferred) {
+        await interaction.editReply({ content: "Error executing command.", components: [] });
+      } else {
+        await interaction.reply({ content: "Error executing command.", ephemeral: true });
+      }
+    } catch {}
   }
 });
+
+
 
 // --- Keepalive server ---
 const app = express();
