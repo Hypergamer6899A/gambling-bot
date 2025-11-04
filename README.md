@@ -1,7 +1,7 @@
 This is a stupid little gambling discord bot.
 It's supposed to be ran on render, it will not work on its own
 It relies on firebase. You'll need a firebase project with a database
-When using render, you'll need 6 environment variables: n\
+When using render, you'll need 6 environment variables: \
 CLIENT_ID: The bot's ID \
 FIREBASE_CLIENT_EMAIL \
 FIREBASE_PRIVATE_KEY \
