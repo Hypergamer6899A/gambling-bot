@@ -9,10 +9,8 @@ import {
 const suits = ['♠', '♥', '♦', '♣'];
 const values = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 
-// In-memory user balances (replace with database in production)
-const clientData = {
-  balances: {}
-};
+// In-memory user balances
+const clientData = { balances: {} };
 
 function generateDeck() {
   return suits.flatMap(suit => values.map(value => ({ value, suit })));
@@ -77,18 +75,17 @@ export async function execute(interaction) {
   const userId = interaction.user.id;
   const bet = interaction.options.getInteger('bet');
 
-  // Initialize user balance if needed
   if (!clientData.balances[userId]) clientData.balances[userId] = 1000;
-
   if (bet > clientData.balances[userId]) {
     return interaction.reply({ content: 'Insufficient balance.', ephemeral: true });
   }
 
   clientData.balances[userId] -= bet;
-
   const deck = generateDeck();
   let hand = drawCards(deck, 5);
   const held = new Set();
+
+  await interaction.deferReply(); // prevent "Unknown interaction"
 
   const getButtons = () => {
     const cardButtons = hand.map((_, i) =>
@@ -97,27 +94,25 @@ export async function execute(interaction) {
         .setLabel(`Hold ${i + 1}`)
         .setStyle(held.has(i) ? ButtonStyle.Danger : ButtonStyle.Secondary)
     );
-
     const playButton = new ButtonBuilder()
       .setCustomId('play')
       .setLabel('Play')
       .setStyle(ButtonStyle.Success);
-
-    const rows = [];
-    rows.push(new ActionRowBuilder().addComponents(cardButtons));
-    rows.push(new ActionRowBuilder().addComponents(playButton));
-    return rows;
+    return [
+      new ActionRowBuilder().addComponents(cardButtons),
+      new ActionRowBuilder().addComponents(playButton)
+    ];
   };
 
-  const embed = new EmbedBuilder()
-    .setTitle('Video Poker')
-    .setDescription(`Your hand: ${hand.map(c => `${c.value}${c.suit}`).join(' ')}\nYour balance: ${clientData.balances[userId]}\nBet: ${bet}`)
-    .setColor('Gold');
+  const updateEmbed = () =>
+    new EmbedBuilder()
+      .setTitle('Video Poker')
+      .setDescription(`Your hand: ${hand.map(c => `${c.value}${c.suit}`).join(' ')}\nYour balance: ${clientData.balances[userId]}\nBet: ${bet}`)
+      .setColor('Gold');
 
-  const message = await interaction.reply({
-    embeds: [embed],
-    components: getButtons(),
-    fetchReply: true
+  const message = await interaction.editReply({
+    embeds: [updateEmbed()],
+    components: getButtons()
   });
 
   const collector = message.createMessageComponentCollector({
@@ -128,15 +123,11 @@ export async function execute(interaction) {
   collector.on('collect', async i => {
     if (i.customId.startsWith('hold_')) {
       const idx = parseInt(i.customId.split('_')[1]);
-      if (held.has(idx)) held.delete(idx);
-      else held.add(idx);
-      await i.update({ embeds: [embed.setDescription(`Your hand: ${hand.map(c => `${c.value}${c.suit}`).join(' ')}\nYour balance: ${clientData.balances[userId]}\nBet: ${bet}`)], components: getButtons() });
+      held.has(idx) ? held.delete(idx) : held.add(idx);
+      await i.update({ embeds: [updateEmbed()], components: getButtons() });
     } else if (i.customId === 'play') {
       collector.stop();
-      // Draw new cards for unheld
-      for (let j = 0; j < hand.length; j++) {
-        if (!held.has(j)) hand[j] = drawCards(deck, 1)[0];
-      }
+      for (let j = 0; j < hand.length; j++) if (!held.has(j)) hand[j] = drawCards(deck, 1)[0];
       const result = evaluateHand(hand);
       const payout = handPayout(result) * bet;
       clientData.balances[userId] += payout;
