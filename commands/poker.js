@@ -1,283 +1,141 @@
-// commands/poker.js
-import {
-  SlashCommandBuilder,
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle
-} from "discord.js";
-import { db } from "../firebase.js";
+import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 
-const SUITS = ["S", "H", "D", "C"];
-const RANKS = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"];
+const suits = ['♠', '♥', '♦', '♣'];
+const values = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 
-// Payout multipliers when the player wins (multiplier * bet is paid)
-const PAYOUTS = {
-  "Straight Flush": 50,
-  "Four of a Kind": 25,
-  "Full House": 9,
-  "Flush": 6,
-  "Straight": 4,
-  "Three of a Kind": 3,
-  "Two Pair": 2,
-  "One Pair": 1,
-  "High Card": 0
-};
-
-function makeDeck() {
-  const deck = [];
-  for (const s of SUITS) for (const r of RANKS) deck.push({ r, s });
-  // shuffle
-  for (let i = deck.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [deck[i], deck[j]] = [deck[j], deck[i]];
-  }
-  return deck;
+function generateDeck() {
+  return suits.flatMap(suit => values.map(value => ({ value, suit })));
 }
 
-function cardToString(c) {
-  return `${c.r}${c.s}`;
+function drawCards(deck, count) {
+  const cards = [];
+  for (let i = 0; i < count; i++) {
+    const idx = Math.floor(Math.random() * deck.length);
+    cards.push(deck.splice(idx, 1)[0]);
+  }
+  return cards;
 }
 
-// hand evaluation returns { rank: number, name: string, key: Array<number> }
-// rank: higher is stronger (1..9). key is tiebreaker list (higher better).
-function evaluateHand(hand) {
-  // Convert ranks to indices
-  const vals = hand.map(c => RANKS.indexOf(c.r));
-  const suits = hand.map(c => c.s);
-  const counts = {};
-  for (const v of vals) counts[v] = (counts[v] || 0) + 1;
-  const countsArr = Object.entries(counts).map(([v, cnt]) => ({ v: Number(v), cnt }));
-  countsArr.sort((a,b) => b.cnt - a.cnt || b.v - a.v);
+function evaluateHand(cards) {
+  const valuesOnly = cards.map(c => c.value);
+  const suitsOnly = cards.map(c => c.suit);
+  const counts = Object.fromEntries(valuesOnly.map(v => [v, valuesOnly.filter(x => x === v).length]));
+  const isFlush = suitsOnly.every(s => s === suitsOnly[0]);
 
-  const isFlush = new Set(suits).size === 1;
+  const indexMap = Object.fromEntries(values.map((v, i) => [v, i]));
+  const sortedVals = [...valuesOnly].sort((a, b) => indexMap[a] - indexMap[b]);
+  const straight = sortedVals.every((v, i, arr) => i === 0 || indexMap[v] === indexMap[arr[i - 1]] + 1);
 
-  // handle A-2-3-4-5 straight by mapping Ace low when needed
-  const uniqueVals = Array.from(new Set(vals)).sort((a,b)=>a-b);
-  let isStraight = false;
-  let topStraightVal = null;
-  if (uniqueVals.length === 5) {
-    const normalStraight = uniqueVals[4] - uniqueVals[0] === 4;
-    // check wheel straight (A low): e.g. values indices [0,1,2,3,12] => treat as straight top=3 (5)
-    const wheel = JSON.stringify(uniqueVals) === JSON.stringify([0,1,2,3,12]);
-    if (normalStraight) {
-      isStraight = true;
-      topStraightVal = uniqueVals[4];
-    } else if (wheel) {
-      isStraight = true;
-      topStraightVal = 3; // treat as 5-high straight
-    }
-  }
-
-  // Determine rank and tiebreaker key
-  // rank: 9 Straight Flush, 8 Four, 7 Full House, 6 Flush, 5 Straight, 4 Three, 3 Two Pair, 2 One Pair, 1 High Card
-  // key: array of values to compare descending
-  let rank = 1, name = "High Card", key = [];
-
-  const cnts = countsArr.map(x=>x.cnt);
-  if (isStraight && isFlush) {
-    rank = 9; name = "Straight Flush"; key = [topStraightVal];
-  } else if (cnts[0] === 4) {
-    rank = 8; name = "Four of a Kind"; key = [countsArr[0].v, countsArr[1].v];
-  } else if (cnts[0] === 3 && cnts[1] === 2) {
-    rank = 7; name = "Full House"; key = [countsArr[0].v, countsArr[1].v];
-  } else if (isFlush) {
-    rank = 6; name = "Flush"; key = vals.slice().sort((a,b)=>b-a);
-  } else if (isStraight) {
-    rank = 5; name = "Straight"; key = [topStraightVal];
-  } else if (cnts[0] === 3) {
-    rank = 4; name = "Three of a Kind"; {
-      const kickers = countsArr.slice(1).map(x=>x.v).sort((a,b)=>b-a);
-      key = [countsArr[0].v, ...kickers];
-    }
-  } else if (cnts[0] === 2 && cnts[1] === 2) {
-    rank = 3; name = "Two Pair"; {
-      const pairVals = countsArr.filter(x=>x.cnt===2).map(x=>x.v).sort((a,b)=>b-a);
-      const kicker = countsArr.find(x=>x.cnt===1).v;
-      key = [...pairVals, kicker];
-    }
-  } else if (cnts[0] === 2) {
-    rank = 2; name = "One Pair"; {
-      const pairVal = countsArr[0].v;
-      const kickers = countsArr.slice(1).map(x=>x.v).sort((a,b)=>b-a);
-      key = [pairVal, ...kickers];
-    }
-  } else {
-    rank = 1; name = "High Card"; key = vals.slice().sort((a,b)=>b-a);
-  }
-
-  return { rank, name, key };
+  const countsArr = Object.values(counts).sort((a, b) => b - a);
+  if (straight && isFlush) return 'Straight Flush';
+  if (countsArr[0] === 4) return 'Four of a Kind';
+  if (countsArr[0] === 3 && countsArr[1] === 2) return 'Full House';
+  if (isFlush) return 'Flush';
+  if (straight) return 'Straight';
+  if (countsArr[0] === 3) return 'Three of a Kind';
+  if (countsArr[0] === 2 && countsArr[1] === 2) return 'Two Pair';
+  if (countsArr[0] === 2) return 'One Pair';
+  return 'High Card';
 }
 
-// compare two evaluated hands: returns 1 if A wins, -1 if B wins, 0 if tie
-function compareEvaluated(a, b) {
-  if (a.rank > b.rank) return 1;
-  if (a.rank < b.rank) return -1;
-  for (let i = 0; i < Math.max(a.key.length, b.key.length); i++) {
-    const av = a.key[i] ?? -1;
-    const bv = b.key[i] ?? -1;
-    if (av > bv) return 1;
-    if (av < bv) return -1;
-  }
-  return 0;
+function cardToString(card) {
+  return `${card.value}${card.suit}`;
 }
 
 export const data = new SlashCommandBuilder()
-  .setName("poker")
-  .setDescription("Play a single-round video poker game against the bot")
-  .addIntegerOption(opt => opt
-    .setName("bet")
-    .setDescription("Bet amount (integer > 0)")
-    .setRequired(true)
-    .setMinValue(1)
-  );
+  .setName('poker')
+  .setDescription('Play a quick video poker round against the bot.')
+  .addIntegerOption(opt => opt.setName('bet').setDescription('Amount to bet').setRequired(true));
 
-export async function execute(interaction) {
-  // Immediate checks and Firestore read/write inside transaction where relevant.
-  const userId = interaction.user.id;
-  const bet = interaction.options.getInteger("bet");
-  if (!Number.isInteger(bet) || bet <= 0) {
-    return interaction.reply({ content: "Invalid bet.", ephemeral: true });
-  }
+export async function execute(interaction, client) {
+  const bet = interaction.options.getInteger('bet');
 
-  // fetch balance
-  const userRef = db.collection("users").doc(userId);
-  let userDoc;
-  try {
-    userDoc = await userRef.get();
-  } catch (err) {
-    console.error("Firestore read error:", err);
-    return interaction.reply({ content: "Database error.", ephemeral: true });
-  }
-  let balance = userDoc.exists ? (userDoc.data().balance ?? 1000) : 1000;
-  if (balance < bet) {
-    return interaction.reply({ content: `Insufficient balance. Your balance: ${balance}`, ephemeral: true });
-  }
+  // TODO: integrate your balance system here
+  let balance = 1000; // example starting balance
+  if (bet > balance) return interaction.reply({ content: `Insufficient balance.`, ephemeral: true });
 
-  // Reserve funds immediately (prevent double-play)
-  try {
-    await userRef.set({ balance: balance - bet, username: interaction.user.username }, { merge: true });
-  } catch (err) {
-    console.error("Firestore write error:", err);
-    return interaction.reply({ content: "Database error.", ephemeral: true });
-  }
+  const deck = generateDeck();
+  let playerHand = drawCards(deck, 5);
+  const botHand = drawCards(deck, 5);
+  const held = Array(5).fill(false);
 
-  // Defer to allow time to respond
-  await interaction.deferReply({ ephemeral: false });
-
-  // Setup deck and initial player hand
-  const deck = makeDeck();
-  const playerHand = deck.splice(0, 5);
-  let held = [false, false, false, false, false];
-
-  // Build UI: 5 card buttons in row 1, Play button in row 2
-  const cardButtons = () => {
-    const bs = [];
-    for (let i = 0; i < 5; i++) {
-      bs.push(
+  function buildComponents() {
+    const cardRow = new ActionRowBuilder().addComponents(
+      playerHand.map((c, i) =>
         new ButtonBuilder()
           .setCustomId(`hold_${i}`)
-          .setLabel(cardToString(playerHand[i]))
+          .setLabel(cardToString(c))
           .setStyle(held[i] ? ButtonStyle.Danger : ButtonStyle.Primary)
-      );
-    }
-    return new ActionRowBuilder().addComponents(bs);
-  };
-  const playRow = () => new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("play").setLabel("Play").setStyle(ButtonStyle.Success)
-  );
+      )
+    );
 
-  const startEmbed = new EmbedBuilder()
-    .setTitle("Video Poker")
-    .setDescription(`Bet: ${bet}\n\nYour hand:\n${playerHand.map(cardToString).join(" ")}`)
-    .setColor(0x1f8b4c);
+    const playRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('play').setLabel('Play').setStyle(ButtonStyle.Success)
+    );
 
-  const msg = await interaction.editReply({
-    embeds: [startEmbed],
-    components: [cardButtons(), playRow()]
+    return [cardRow, playRow];
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle('Video Poker')
+    .setDescription(`Your hand: ${playerHand.map(cardToString).join(' ')}\nBet: ${bet}\nBalance: ${balance}`)
+    .setColor('Gold');
+
+  const msg = await interaction.reply({ embeds: [embed], components: buildComponents(), fetchReply: true });
+
+  const collector = msg.createMessageComponentCollector({
+    filter: i => i.user.id === interaction.user.id,
+    time: 60000
   });
 
-  // Collector
-  const collector = msg.createMessageComponentCollector({ time: 30000 });
-
-  collector.on("collect", async comp => {
-    if (comp.user.id !== userId) return comp.reply({ content: "Not your game.", ephemeral: true });
-
-    if (comp.customId.startsWith("hold_")) {
-      const idx = Number(comp.customId.split("_")[1]);
-      held[idx] = !held[idx]; // toggle
-      // update UI
-      try {
-        await comp.update({ components: [cardButtons(), playRow()] });
-      } catch (err) {
-        console.error("update error:", err);
+  collector.on('collect', async i => {
+    if (i.customId.startsWith('hold_')) {
+      const index = parseInt(i.customId.split('_')[1]);
+      held[index] = !held[index]; // toggle hold
+      await i.update({ embeds: [embed], components: buildComponents() });
+    } else if (i.customId === 'play') {
+      collector.stop('played');
+      for (let j = 0; j < playerHand.length; j++) {
+        if (!held[j]) playerHand[j] = drawCards(deck, 1)[0];
       }
-      return;
-    }
 
-    if (comp.customId === "play") {
-      // stop collector and process round
-      collector.stop("played");
-      await comp.deferUpdate(); // acknowledge button click
-      // replace unheld cards
-      for (let i = 0; i < 5; i++) {
-        if (!held[i]) playerHand[i] = deck.splice(0,1)[0];
-      }
-      // bot hand
-      const botHand = deck.splice(0,5);
+      const playerResult = evaluateHand(playerHand);
+      const botResult = evaluateHand(botHand);
 
-      const evalPlayer = evaluateHand(playerHand);
-      const evalBot = evaluateHand(botHand);
-      const cmp = compareEvaluated(evalPlayer, evalBot);
-
-      // compute payout and new balance
-      let payout = 0;
-      if (cmp === 1) {
-        const mult = PAYOUTS[evalPlayer.name] ?? 0;
-        payout = bet * mult;
-        balance = (balance - 0) + payout; // we already deducted bet earlier; pay full payout
-      } else if (cmp === 0) {
-        // tie => refund bet
-        balance = balance + bet;
+      // simple result calculation
+      let resultText;
+      if (values.indexOf(playerResult) > values.indexOf(botResult)) {
+        resultText = `You won!`;
+        balance += bet;
+      } else if (playerResult === botResult) {
+        resultText = `Tie!`;
       } else {
-        // loss => bet already deducted
-        // balance unchanged
+        resultText = `You lost!`;
+        balance -= bet;
       }
 
-      // persist new balance
-      try {
-        await userRef.set({ balance, username: interaction.user.username }, { merge: true });
-      } catch (err) {
-        console.error("Firestore write error:", err);
-      }
-
-      const resultText = cmp === 1 ? `You win (${evalPlayer.name})` : cmp === 0 ? "Tie" : `Bot wins (${evalBot.name})`;
-
-      const endEmbed = new EmbedBuilder()
-        .setTitle("Video Poker — Result")
+      const finalEmbed = new EmbedBuilder()
+        .setTitle('Final Hands')
         .setDescription(
-          `Your hand: ${playerHand.map(cardToString).join(" ")} — ${evalPlayer.name}\n` +
-          `Bot hand:  ${botHand.map(cardToString).join(" ")} — ${evalBot.name}\n\n` +
-          `Result: ${resultText}\n` +
+          `Your hand: ${playerHand.map(cardToString).join(' ')} (${playerResult})\n` +
+          `Bot hand: ${botHand.map(cardToString).join(' ')} (${botResult})\n` +
           `Bet: ${bet}\n` +
-          `New balance: ${balance}`
+          `New Balance: ${balance}\n` +
+          `${resultText}`
         )
-        .setColor(cmp === 1 ? 0x1f8b4c : cmp === 0 ? 0x9e9e00 : 0xc0392b);
+        .setColor('Green');
 
-      await interaction.editReply({ embeds: [endEmbed], components: [] });
-      return;
+      await i.update({ embeds: [finalEmbed], components: [] });
     }
   });
 
-  collector.on("end", async (_, reason) => {
-    if (reason !== "played") {
-      // timeout: refund bet
-      try {
-        await userRef.set({ balance: balance + bet, username: interaction.user.username }, { merge: true });
-      } catch (err) { console.error("refund error:", err); }
-      try {
-        await interaction.editReply({ content: "Timed out. Bet refunded.", embeds: [], components: [] });
-      } catch (_) {}
+  collector.on('end', async (_, reason) => {
+    if (reason !== 'played') {
+      const cancelEmbed = new EmbedBuilder()
+        .setTitle('Game Cancelled')
+        .setDescription('You did not press Play in time.')
+        .setColor('Red');
+      await interaction.editReply({ embeds: [cancelEmbed], components: [] });
     }
   });
 }
