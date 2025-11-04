@@ -7,7 +7,6 @@ import { updateTopRoles } from "./topRoles.js";
 
 dotenv.config();
 
-// ----- Client Setup -----
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
 });
@@ -21,21 +20,16 @@ const commandFiles = fs
 
 for (const file of commandFiles) {
   const command = await import(`./commands/${file}`);
-  if (!command.data || !command.execute) {
-    console.warn(`Command ${file} is missing data or execute export.`);
-    continue;
-  }
   client.commands.set(command.data.name, command);
 }
 
 // ----- Ready Event -----
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`Logged in as ${client.user.tag}`);
-
   try {
     await updateTopRoles(client);
   } catch (err) {
-    console.error("Error updating top roles:", err);
+    console.error("Error updating top roles on ready:", err);
   }
 
   client.user.setPresence({
@@ -50,30 +44,43 @@ client.on("interactionCreate", async (interaction) => {
 
   const command = client.commands.get(interaction.commandName);
   if (!command) {
-    console.warn(`No command found for ${interaction.commandName}`);
-    return;
+    return interaction.reply({
+      content: "Unknown command.",
+      ephemeral: true,
+    }).catch(() => {});
   }
 
   try {
-    // Make sure the command executes within Discord's 3-second window
+    // Ensure we handle both deferred and immediate responses safely
     await command.execute(interaction, client);
-  } catch (error) {
-    console.error(`Error executing ${interaction.commandName}:`, error);
-
-    const msg = { content: "Error executing command.", ephemeral: true };
+  } catch (err) {
+    console.error(`Error executing command ${interaction.commandName}:`, err);
 
     try {
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp(msg);
+      if (interaction.deferred) {
+        await interaction.editReply({
+          content: "There was an error executing this command.",
+        });
+      } else if (interaction.replied) {
+        await interaction.followUp({
+          content: "There was an error executing this command.",
+          ephemeral: true,
+        });
       } else {
-        await interaction.reply(msg);
+        await interaction.reply({
+          content: "There was an error executing this command.",
+          ephemeral: true,
+        });
       }
-    } catch {
-      console.warn(
-        "Could not send error message; interaction may have expired."
-      );
+    } catch (err2) {
+      console.error("Failed to send error reply:", err2);
     }
   }
+});
+
+// ----- Catch unhandled promise rejections -----
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
 });
 
 // ----- Web Server (Render) -----
@@ -85,5 +92,5 @@ app.listen(process.env.PORT || 3000, () =>
 
 // ----- Login -----
 client.login(process.env.TOKEN).catch((err) => {
-  console.error("Failed to login:", err);
+  console.error("Login failed:", err);
 });
