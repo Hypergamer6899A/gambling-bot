@@ -19,7 +19,7 @@ export async function execute(interaction) {
     return interaction.reply({ content: `You can only use commands in <#${ALLOWED_CHANNEL_ID}>.`, ephemeral: true });
   }
 
-  if (!interaction.deferred && !interaction.replied) await interaction.deferReply();
+ if (!interaction.deferred && !interaction.replied) await interaction.deferReply();
 
   const amount = interaction.options.getInteger("amount");
   if (amount <= 0 || amount > MAX_BET) {
