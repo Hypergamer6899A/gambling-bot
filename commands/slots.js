@@ -7,12 +7,12 @@ const MAX_BET = 300;
 
 // ---- EDIT THIS SECTION ONLY ----
 const symbols = [
-  { emoji: "<:waxedlightlyweatheredcutcopperst:1429946087921287168>", multiplier: 5 },
-  { emoji: "<:testblock:1429946118229196810>", multiplier: 3 },
-  { emoji: "<:scaryhorrormonster:1429946136784932864>", multiplier: 4 },
-  { emoji: "<:sus:1429945939006853170>", multiplier: 6 },
-  { emoji: "<:Warden:1429946036809371769>", multiplier: 2 },
-  { emoji: "<:deaththreat:1435328355657449709>", multiplier: 10 }
+  { emoji: "<:waxedlightlyweatheredcutcopperst:1429946087921287168>", multiplier3: 5, multiplier2: 2 },
+  { emoji: "<:testblock:1429946118229196810>", multiplier3: 3 }, // no partial win
+  { emoji: "<:scaryhorrormonster:1429946136784932864>", multiplier3: 4, multiplier2: 1.5 },
+  { emoji: "<:sus:1429945939006853170>", multiplier3: 6 }, // no partial win
+  { emoji: "<:Warden:1429946036809371769>", multiplier3: 2, multiplier2: 1 },
+  { emoji: "<:deaththreat:1435328355657449709>", multiplier3: 10 } // no partial win
 ];
 // --------------------------------
 
@@ -46,7 +46,7 @@ export async function execute(interaction) {
   if (balance < amount)
     return interaction.editReply("Not enough money.");
 
-  // Deduct bet immediately
+  // Deduct bet
   await userRef.set(
     { balance: balance - amount, username: interaction.user.username },
     { merge: true }
@@ -56,14 +56,31 @@ export async function execute(interaction) {
   const spin = () => symbols[Math.floor(Math.random() * symbols.length)];
   const row = [spin(), spin(), spin()];
 
-  // Check if all emojis match
-  const win = row.every(s => s.emoji === row[0].emoji);
+  let winnings = 0;
+  let winType = "";
 
-  // Calculate winnings based on symbol multiplier
-  const winnings = win ? amount * row[0].multiplier : 0;
-  const color = win ? "#00FF00" : "#FF0000";
+  // 3-of-a-kind
+  if (row.every(s => s.emoji === row[0].emoji)) {
+    winnings = amount * row[0].multiplier3;
+    winType = "3 of a kind!";
+  }
+  // 2-of-a-kind partial win
+  else if (row[0].emoji === row[1].emoji && row[0].multiplier2) {
+    winnings = amount * row[0].multiplier2;
+    winType = "2 of a kind!";
+  }
+  else if (row[1].emoji === row[2].emoji && row[1].multiplier2) {
+    winnings = amount * row[1].multiplier2;
+    winType = "2 of a kind!";
+  }
+  else if (row[0].emoji === row[2].emoji && row[0].multiplier2) {
+    winnings = amount * row[0].multiplier2;
+    winType = "2 of a kind!";
+  }
 
-  // Update balance with winnings
+  const color = winnings > 0 ? "#00FF00" : "#FF0000";
+
+  // Update balance
   let newBalance = balance - amount + winnings;
   await db.runTransaction(async (t) => {
     const doc = await t.get(userRef);
@@ -73,9 +90,9 @@ export async function execute(interaction) {
   });
 
   const embed = new EmbedBuilder()
-    .setTitle("🎰 Slot Machine 🎰")
+    .setTitle("Slot Machine")
     .setColor(color)
-    .setDescription(`${row.map(r => r.emoji).join(" | ")}\n\n${win ? `You won $${winnings}!` : `You lost $${amount}.`}`)
+    .setDescription(`${row.map(r => r.emoji).join(" | ")}\n\n${winnings > 0 ? `You won $${winnings} (${winType})!` : `You lost $${amount}.`}`)
     .setFooter({ text: `Current Balance: $${newBalance}` });
 
   await interaction.editReply({ embeds: [embed] });
