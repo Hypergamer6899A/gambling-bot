@@ -1,41 +1,29 @@
-import { SlashCommandBuilder } from "discord.js";
+import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
 import { db } from "../firebase.js";
-
-const ALLOWED_CHANNEL_ID = "1434934862430867487";
 
 export const data = new SlashCommandBuilder()
   .setName("leaderboard")
-  .setDescription("Top 5 richest users");
+  .setDescription("Show the top balances");
 
 export async function execute(interaction) {
-  if (interaction.channel.id !== ALLOWED_CHANNEL_ID) {
-    return interaction.reply({
-      content: `You can only use this command in <#${ALLOWED_CHANNEL_ID}>.`,
-      ephemeral: true
-    });
+  if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ ephemeral: false });
+
+  try {
+    const snapshot = await db.collection("users").orderBy("balance", "desc").limit(10).get();
+    if (snapshot.empty) return await interaction.editReply("No users found.");
+
+    const leaderboard = snapshot.docs.map((doc, i) => {
+      const data = doc.data();
+      return `${i + 1}. ${data.username}: $${data.balance.toLocaleString()}`;
+    }).join("\n");
+
+    const embed = new EmbedBuilder()
+      .setTitle("Leaderboard")
+      .setColor("#FFD700")
+      .setDescription(leaderboard);
+
+    await interaction.editReply({ embeds: [embed] });
+  } catch (err) {
+    await interaction.editReply(`❌ Error: ${err.message}`);
   }
-
-  await interaction.deferReply();
-
-  const snapshot = await db.collection("users").orderBy("balance", "desc").limit(5).get();
-  if (snapshot.empty) return interaction.editReply("No users yet.");
-
-  let reply = "**🏆 Top 5 Richest Players 🏆**\n";
-  let i = 1;
-
-  for (const doc of snapshot.docs) {
-    let username = doc.data().username || doc.id;
-
-    try {
-      const member = await interaction.guild.members.fetch(doc.id);
-      username = member.user.username; // Use Discord username if available
-    } catch {
-      // fallback to stored username in DB or raw ID
-    }
-
-    reply += `${i}. ${username} — $${doc.data().balance.toLocaleString()}\n`;
-    i++;
-  }
-
-  await interaction.editReply(reply);
 }
