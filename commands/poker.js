@@ -26,13 +26,13 @@ function drawCards(deck, count) {
 }
 
 function evaluateHand(cards) {
-  const valuesOnly = cards.map(c => c.value);
+  const vals = cards.map(c => c.value);
   const suitsOnly = cards.map(c => c.suit);
-  const counts = Object.fromEntries(valuesOnly.map(v => [v, valuesOnly.filter(x => x === v).length]));
+  const counts = Object.fromEntries(vals.map(v => [v, vals.filter(x => x === v).length]));
   const isFlush = suitsOnly.every(s => s === suitsOnly[0]);
 
   const indexMap = Object.fromEntries(values.map((v, i) => [v, i]));
-  const sortedVals = [...valuesOnly].sort((a, b) => indexMap[a] - indexMap[b]);
+  const sortedVals = [...vals].sort((a, b) => indexMap[a] - indexMap[b]);
   const straight = sortedVals.every((v, i, arr) => i === 0 || indexMap[v] === indexMap[arr[i - 1]] + 1);
 
   const countsArr = Object.values(counts).sort((a, b) => b - a);
@@ -64,7 +64,7 @@ function handPayout(hand) {
 
 export const data = new SlashCommandBuilder()
   .setName('poker')
-  .setDescription('Play a quick video poker round.')
+  .setDescription('Play a video poker round against the bot.')
   .addIntegerOption(option =>
     option.setName('bet')
       .setDescription('Amount to bet')
@@ -76,16 +76,13 @@ export async function execute(interaction) {
   const bet = interaction.options.getInteger('bet');
 
   if (!clientData.balances[userId]) clientData.balances[userId] = 1000;
-  if (bet > clientData.balances[userId]) {
-    return interaction.reply({ content: 'Insufficient balance.', ephemeral: true });
-  }
+  if (bet > clientData.balances[userId]) return interaction.reply({ content: 'Insufficient balance.', ephemeral: true });
 
   clientData.balances[userId] -= bet;
+
   const deck = generateDeck();
   let hand = drawCards(deck, 5);
   const held = new Set();
-
-  await interaction.deferReply(); // prevent "Unknown interaction"
 
   const getButtons = () => {
     const cardButtons = hand.map((_, i) =>
@@ -96,58 +93,74 @@ export async function execute(interaction) {
     );
     const playButton = new ButtonBuilder()
       .setCustomId('play')
-      .setLabel('Play')
+      .setLabel('Draw')
       .setStyle(ButtonStyle.Success);
+
     return [
       new ActionRowBuilder().addComponents(cardButtons),
       new ActionRowBuilder().addComponents(playButton)
     ];
   };
 
-  const updateEmbed = () =>
-    new EmbedBuilder()
-      .setTitle('Video Poker')
-      .setDescription(`Your hand: ${hand.map(c => `${c.value}${c.suit}`).join(' ')}\nYour balance: ${clientData.balances[userId]}\nBet: ${bet}`)
-      .setColor('Gold');
+  const embed = new EmbedBuilder()
+    .setTitle('Video Poker')
+    .setDescription(`Your hand: ${hand.map(c => `${c.value}${c.suit}`).join(' ')}\nBalance: ${clientData.balances[userId]}\nBet: ${bet}`)
+    .setColor('Gold');
 
-  const message = await interaction.editReply({
-    embeds: [updateEmbed()],
-    components: getButtons()
-  });
+  await interaction.reply({ embeds: [embed], components: getButtons(), fetchReply: true })
+    .then(message => {
+      const collector = message.createMessageComponentCollector({
+        filter: i => i.user.id === userId,
+        time: 30000
+      });
 
-  const collector = message.createMessageComponentCollector({
-    filter: i => i.user.id === userId,
-    time: 30000
-  });
+      collector.on('collect', async i => {
+        if (i.customId.startsWith('hold_')) {
+          const idx = parseInt(i.customId.split('_')[1]);
+          if (held.has(idx)) held.delete(idx);
+          else held.add(idx);
 
-  collector.on('collect', async i => {
-    if (i.customId.startsWith('hold_')) {
-      const idx = parseInt(i.customId.split('_')[1]);
-      held.has(idx) ? held.delete(idx) : held.add(idx);
-      await i.update({ embeds: [updateEmbed()], components: getButtons() });
-    } else if (i.customId === 'play') {
-      collector.stop();
-      for (let j = 0; j < hand.length; j++) if (!held.has(j)) hand[j] = drawCards(deck, 1)[0];
-      const result = evaluateHand(hand);
-      const payout = handPayout(result) * bet;
-      clientData.balances[userId] += payout;
+          const updatedEmbed = embed.setDescription(`Your hand: ${hand.map(c => `${c.value}${c.suit}`).join(' ')}\nBalance: ${clientData.balances[userId]}\nBet: ${bet}`);
+          await i.update({ embeds: [updatedEmbed], components: getButtons() });
+        } else if (i.customId === 'play') {
+          collector.stop();
+          for (let j = 0; j < hand.length; j++) {
+            if (!held.has(j)) hand[j] = drawCards(deck, 1)[0];
+          }
 
-      const endEmbed = new EmbedBuilder()
-        .setTitle('Final Hand')
-        .setDescription(`Your hand: ${hand.map(c => `${c.value}${c.suit}`).join(' ')}\nResult: ${result}\nYou ${payout > 0 ? 'won' : 'lost'} ${payout} credits\nNew balance: ${clientData.balances[userId]}`)
-        .setColor('Green');
+          const userHandRank = evaluateHand(hand);
+          const botHand = drawCards(deck, 5);
+          const botHandRank = evaluateHand(botHand);
 
-      await i.update({ embeds: [endEmbed], components: [] });
-    }
-  });
+          const userPayout = handPayout(userHandRank) * bet;
+          const won = handPayout(userHandRank) > handPayout(botHandRank);
 
-  collector.on('end', async collected => {
-    if (!collected.size) {
-      const timeoutEmbed = new EmbedBuilder()
-        .setTitle('Final Hand')
-        .setDescription(`Your hand: ${hand.map(c => `${c.value}${c.suit}`).join(' ')}\nNo action taken.\nYour balance: ${clientData.balances[userId]}`)
-        .setColor('Red');
-      await interaction.editReply({ embeds: [timeoutEmbed], components: [] });
-    }
-  });
+          if (won) clientData.balances[userId] += userPayout;
+
+          const finalEmbed = new EmbedBuilder()
+            .setTitle('Final Result')
+            .setDescription(
+              `Your hand: ${hand.map(c => `${c.value}${c.suit}`).join(' ')}\n` +
+              `Your hand rank: ${userHandRank}\n\n` +
+              `Bot hand: ${botHand.map(c => `${c.value}${c.suit}`).join(' ')}\n` +
+              `Bot hand rank: ${botHandRank}\n\n` +
+              `You ${won ? 'won' : 'lost'} ${won ? userPayout : bet} credits\n` +
+              `New balance: ${clientData.balances[userId]}`
+            )
+            .setColor(won ? 'Green' : 'Red');
+
+          await i.update({ embeds: [finalEmbed], components: [] });
+        }
+      });
+
+      collector.on('end', async collected => {
+        if (!collected.size) {
+          const timeoutEmbed = new EmbedBuilder()
+            .setTitle('Timeout')
+            .setDescription(`Your hand: ${hand.map(c => `${c.value}${c.suit}`).join(' ')}\nNo action taken.\nBalance: ${clientData.balances[userId]}`)
+            .setColor('Red');
+          await interaction.editReply({ embeds: [timeoutEmbed], components: [] });
+        }
+      });
+    });
 }
