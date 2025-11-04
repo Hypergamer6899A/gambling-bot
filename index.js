@@ -2,6 +2,7 @@ import { Client, GatewayIntentBits, Collection } from "discord.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import express from "express";
 import { updateTopRoles } from "./topRoles.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -17,25 +18,28 @@ const client = new Client({
 });
 
 client.commands = new Collection();
-const foldersPath = path.join(__dirname, "commands");
-const commandFolders = fs.readdirSync(foldersPath);
 
-// Load all commands
-for (const folder of commandFolders) {
-  const commandsPath = path.join(foldersPath, folder);
-  const commandFiles = fs.readdirSync(commandsPath).filter(f => f.endsWith(".js"));
-  for (const file of commandFiles) {
-    const filePath = path.join(commandsPath, file);
-    const command = (await import(`file://${filePath}`)).default;
-    if (command?.data?.name && typeof command.execute === "function") {
-      client.commands.set(command.data.name, command);
-    }
+// --- Load all .js commands directly ---
+const commandsPath = path.join(__dirname, "commands");
+const commandFiles = fs.readdirSync(commandsPath).filter(f => f.endsWith(".js"));
+
+for (const file of commandFiles) {
+  const filePath = path.join(commandsPath, file);
+  const command = (await import(`file://${filePath}`)).default;
+  if (command?.data?.name && typeof command.execute === "function") {
+    client.commands.set(command.data.name, command);
   }
 }
 
-client.once("clientReady", async () => {
+// --- Express keepalive to satisfy Render port scan ---
+const app = express();
+const PORT = process.env.PORT || 10000;
+app.get("/", (_, res) => res.send("Bot is running."));
+app.listen(PORT, () => console.log(`Keepalive server on port ${PORT}`));
+
+// --- Discord events ---
+client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-  // background updates only, never touch interactions here
   try {
     await updateTopRoles(client);
   } catch (err) {
@@ -43,9 +47,8 @@ client.once("clientReady", async () => {
   }
 });
 
-client.on("interactionCreate", async (interaction) => {
+client.on("interactionCreate", async interaction => {
   if (!interaction.isCommand()) return;
-
   const command = client.commands.get(interaction.commandName);
   if (!command) return;
 
@@ -53,19 +56,9 @@ client.on("interactionCreate", async (interaction) => {
     await command.execute(interaction, client);
   } catch (err) {
     console.error(`❌ Error in ${interaction.commandName}:`, err);
-
-    // handle only if the interaction is still open
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({
-        content: "There was an error executing this command.",
-        ephemeral: true,
-      }).catch(() => {});
-    } else {
-      await interaction.followUp({
-        content: "Something went wrong after execution.",
-        ephemeral: true,
-      }).catch(() => {});
-    }
+    const msg = { content: "There was an error executing this command.", ephemeral: true };
+    if (!interaction.replied && !interaction.deferred) await interaction.reply(msg).catch(() => {});
+    else await interaction.followUp(msg).catch(() => {});
   }
 });
 
