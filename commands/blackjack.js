@@ -3,33 +3,30 @@ import { db } from "../firebase.js";
 import { updateTopRoles } from "../topRoles.js";
 
 const ALLOWED_CHANNEL_ID = "1434934862430867487";
-const MAX_BET = 500;  // set your max bet
+const MAX_BET = 500;
 
 export const data = new SlashCommandBuilder()
   .setName("blackjack")
-  .setDescription("Play a game of Blackjack (vs the dealer) with your bet")
+  .setDescription("Play simplified Blackjack (numbers only) with your bet")
   .addIntegerOption(opt =>
     opt.setName("amount")
-      .setDescription("Bet amount (must be positive and ≤ " + MAX_BET + ")")
+      .setDescription("Bet amount (1–" + MAX_BET + ")")
       .setRequired(true)
   );
 
 export async function execute(interaction) {
-  if (interaction.channel.id !== ALLOWED_CHANNEL_ID) {
-    return interaction.reply({ content: `You can only use commands in <#${ALLOWED_CHANNEL_ID}>.`, ephemeral: true });
-  }
+  if (interaction.channel.id !== ALLOWED_CHANNEL_ID)
+    return interaction.reply({ content: `You can only use this command in <#${ALLOWED_CHANNEL_ID}>.`, ephemeral: true });
 
   await interaction.deferReply();
 
   const amount = interaction.options.getInteger("amount");
-  if (amount <= 0 || amount > MAX_BET) {
+  if (amount <= 0 || amount > MAX_BET)
     return interaction.editReply(`Bet must be between 1 and ${MAX_BET}.`);
-  }
 
   const userId = interaction.user.id;
   const userRef = db.collection("users").doc(userId);
 
-  // transaction to check balance
   const trx = await db.runTransaction(async (t) => {
     const doc = await t.get(userRef);
     const balance = doc.exists ? doc.data().balance : 1000;
@@ -38,16 +35,13 @@ export async function execute(interaction) {
     return balance - amount;
   }).catch(err => ({ error: err.message }));
 
-  if (trx.error) {
-    return interaction.editReply(trx.error);
-  }
+  if (trx.error) return interaction.editReply(trx.error);
 
-  // Build deck & hands
-  const suits = ["♠","♥","♦","♣"];
-  const ranks = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"];
+  // simplified deck: 2–10 + A
+  const suits = ["♠", "♥", "♦", "♣"];
+  const ranks = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "A"];
   const createDeck = () => suits.flatMap(s => ranks.map(r => r + s));
-  const valueMap = { "J":10, "Q":10, "K":10, "A":11 };
-  const getValue = (card) => valueMap[card.slice(0,-1)] ?? parseInt(card.slice(0,-1));
+  const getValue = (card) => card.startsWith("A") ? 11 : parseInt(card);
   const handValue = (hand) => {
     let sum = hand.reduce((acc, c) => acc + getValue(c), 0);
     let aces = hand.filter(c => c.startsWith("A")).length;
@@ -59,8 +53,8 @@ export async function execute(interaction) {
   };
 
   const deck = createDeck();
-  for (let i=deck.length-1; i>0; i--) {
-    const j = Math.floor(Math.random()* (i+1));
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
     [deck[i], deck[j]] = [deck[j], deck[i]];
   }
 
@@ -79,7 +73,7 @@ export async function execute(interaction) {
 
   const message = await interaction.editReply({ embeds: [embed], components: [row] });
 
-  const filter = i => i.user.id === userId && ["hit","stand"].includes(i.customId);
+  const filter = i => i.user.id === userId && ["hit", "stand"].includes(i.customId);
   const collector = message.createMessageComponentCollector({ filter, time: 60000 });
 
   collector.on("collect", async (i) => {
@@ -102,13 +96,10 @@ export async function execute(interaction) {
   });
 
   collector.on("end", async (_, reason) => {
-    if (!playerHand) return;
-
     const playerVal = handValue(playerHand);
     if (reason === "playerBust") {
       await finalize(false);
     } else {
-      // dealer plays
       let dVal = handValue(dealerHand);
       while (dVal < 17) {
         dealerHand.push(deck.pop());
@@ -126,11 +117,8 @@ export async function execute(interaction) {
       .setDescription(`Your hand (${pVal}): ${playerHand.join(", ")}\nDealer hand (${dVal}): ${dealerHand.join(", ")}`)
       .setFooter({ text: `Bet: $${amount}` });
 
-    let payout = 0;
-    if (playerWin) payout = amount * 2;
-    else payout = 0;
+    const payout = playerWin ? amount * 2 : 0;
 
-    // update DB with payout
     await db.runTransaction(async (t) => {
       const doc = await t.get(userRef);
       const current = doc.exists ? doc.data().balance : 0;
@@ -138,8 +126,6 @@ export async function execute(interaction) {
     });
 
     await interaction.editReply({ embeds: [resultEmbed], components: [] });
-
-    // refresh top roles
     await updateTopRoles(interaction.client);
   }
 }
