@@ -2,7 +2,6 @@ import { Client, GatewayIntentBits, Collection } from "discord.js";
 import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
-import { db } from "./firebase.js";
 import express from "express";
 import { updateTopRoles } from "./topRoles.js";
 
@@ -13,8 +12,6 @@ const client = new Client({
 });
 
 client.commands = new Collection();
-
-const ALLOWED_CHANNEL_ID = "1434934862430867487";
 
 // ----- Load Commands -----
 const commandFiles = fs.readdirSync(path.join(process.cwd(), "commands")).filter(f => f.endsWith(".js"));
@@ -37,10 +34,6 @@ client.once("clientReady", async () => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isCommand()) return;
 
-  if (interaction.channel.id !== ALLOWED_CHANNEL_ID) {
-    return interaction.reply({ content: `You can only use commands in <#${ALLOWED_CHANNEL_ID}>.`, ephemeral: true });
-  }
-
   const command = client.commands.get(interaction.commandName);
   if (!command) return;
 
@@ -57,7 +50,9 @@ client.on("interactionCreate", async (interaction) => {
 // ----- Web Server (Render) -----
 const app = express();
 app.get("/", (req, res) => res.send("Bot is running."));
-app.listen(process.env.PORT || 3000, () => console.log(`Listening on port ${process.env.PORT || 3000}`));
+app.listen(process.env.PORT || 3000, () =>
+  console.log(`Listening on port ${process.env.PORT || 3000}`)
+);
 
 // ----- Login -----
 client.login(process.env.TOKEN);
