@@ -1,129 +1,130 @@
-// commands/poker.js
-import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
+import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from "discord.js";
 import { db } from "../firebase.js";
 import { updateTopRoles } from "../topRoles.js";
 
+const suits = ["♠", "♥", "♦", "♣"];
+const values = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"];
 const ALLOWED_CHANNEL_ID = "1434934862430867487";
 
-const suits = ["♠", "♥", "♦", "♣"];
-const ranks = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"];
-
-function createDeck() {
+function drawDeck() {
   const deck = [];
-  for (const s of suits) for (const r of ranks) deck.push({ rank: r, suit: s });
-  for (let i = deck.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [deck[i], deck[j]] = [deck[j], deck[i]];
-  }
-  return deck;
+  for (const s of suits)
+    for (const v of values)
+      deck.push(`${v}${s}`);
+  return deck.sort(() => Math.random() - 0.5);
 }
 
-function rankValue(r) {
-  return ranks.indexOf(r);
-}
+function rankHand(cards) {
+  // Simplified hand ranking
+  const vals = cards.map(c => c.replace(/[♠♥♦♣]/g, ""));
+  const suitsOnly = cards.map(c => c.slice(-1));
+  const counts = vals.reduce((a,v) => ((a[v]=(a[v]||0)+1),a), {});
+  const unique = Object.keys(counts).length;
+  const flush = new Set(suitsOnly).size === 1;
 
-function evaluateHand(hand) {
-  const values = hand.map(c => rankValue(c.rank)).sort((a,b)=>a-b);
-  const suitsAll = hand.map(c=>c.suit);
-  const counts = {};
-  for (const v of values) counts[v] = (counts[v]||0)+1;
-  const flush = suitsAll.every(s=>s===suitsAll[0]);
-  const straight = values.every((v,i)=>i===0 || v===values[i-1]+1);
+  const order = values;
+  const sorted = vals.map(v => order.indexOf(v)).sort((a,b)=>a-b);
+  const straight = sorted.every((v,i)=>i===0||v-sorted[i-1]===1);
 
-  if (straight && flush) return 9;
-  if (Object.values(counts).includes(4)) return 8;
-  if (Object.values(counts).includes(3) && Object.values(counts).includes(2)) return 7;
-  if (flush) return 6;
-  if (straight) return 5;
-  if (Object.values(counts).includes(3)) return 4;
-  if (Object.values(counts).filter(v=>v===2).length===2) return 3;
-  if (Object.values(counts).includes(2)) return 2;
-  return 1;
+  if (straight && flush) return { name:"Straight Flush", mult:10 };
+  if (Object.values(counts).includes(4)) return { name:"Four of a Kind", mult:6 };
+  if (Object.values(counts).includes(3) && Object.values(counts).includes(2)) return { name:"Full House", mult:4 };
+  if (flush) return { name:"Flush", mult:3 };
+  if (straight) return { name:"Straight", mult:2 };
+  if (Object.values(counts).includes(3)) return { name:"Three of a Kind", mult:1.5 };
+  if (Object.values(counts).filter(v=>v===2).length===2) return { name:"Two Pair", mult:1.2 };
+  if (Object.values(counts).includes(2)) return { name:"Pair", mult:1.1 };
+  return { name:"Nothing", mult:0 };
 }
 
 export const data = new SlashCommandBuilder()
   .setName("poker")
-  .setDescription("Play a fast round of Video Poker vs the bot")
-  .addIntegerOption(opt =>
+  .setDescription("Play a quick round of video poker")
+  .addIntegerOption(opt => 
     opt.setName("amount")
-      .setDescription("Bet amount (must be > 0)")
-      .setRequired(true));
+      .setDescription("Bet amount")
+      .setRequired(true)
+  );
 
 export async function execute(interaction, client) {
   if (interaction.channel.id !== ALLOWED_CHANNEL_ID)
-    return interaction.reply({ content: `Use this in <#${ALLOWED_CHANNEL_ID}> only.`, ephemeral: true });
-
-  await interaction.deferReply();
+    return interaction.reply({ content:`Use this command only in <#${ALLOWED_CHANNEL_ID}>.`, ephemeral:true });
 
   const amount = interaction.options.getInteger("amount");
-  if (amount <= 0) return interaction.editReply("Bet must be greater than 0.");
+  if (amount <= 0) return interaction.reply("Bet must be greater than 0.");
 
   const id = interaction.user.id;
   const userRef = db.collection("users").doc(id);
+  const doc = await userRef.get();
+  let balance = doc.exists ? doc.data().balance : 1000;
+  if (amount > balance) return interaction.reply("Not enough money.");
 
-  const result = await db.runTransaction(async (t) => {
-    const doc = await t.get(userRef);
-    let balance = doc.exists ? doc.data().balance : 1000;
-    if (amount > balance) throw new Error("Not enough money.");
-
-    const deck = createDeck();
-    let player = deck.splice(0, 5);
-    let bot = deck.splice(0, 5);
-
-    const botEval = evaluateHand(bot);
-    if (botEval < 2) {
-      bot.sort((a,b)=>rankValue(a.rank)-rankValue(b.rank));
-      bot.splice(0,3,...deck.splice(0,3));
-    }
-
-    const playerEval = evaluateHand(player);
-    if (playerEval <= 2) {
-      player.sort((a,b)=>rankValue(a.rank)-rankValue(b.rank));
-      player.splice(0,2,...deck.splice(0,2));
-    }
-
-    const finalPlayerEval = evaluateHand(player);
-    const finalBotEval = evaluateHand(bot);
-
-    let outcome;
-    if (finalPlayerEval > finalBotEval) outcome = "win";
-    else if (finalPlayerEval < finalBotEval) outcome = "lose";
-    else outcome = "tie";
-
-    let change = 0;
-    if (outcome === "win") change = amount;
-    else if (outcome === "lose") change = -amount;
-    balance += change;
-
-    t.set(userRef, { balance, username: interaction.user.username });
-    return { outcome, balance, player, bot, change };
-  }).catch(err => ({ error: err.message }));
-
-  if (result.error) return interaction.editReply(result.error);
-
-  const handStr = (hand) => hand.map(c => `${c.rank}${c.suit}`).join(" ");
-  const colorMap = { win: 0x00ff00, lose: 0xff0000, tie: 0xffff00 };
+  let deck = drawDeck();
+  let hand = deck.splice(0,5);
+  const handMsg = hand.map((c,i)=>`[${i+1}] ${c}`).join("  ");
 
   const embed = new EmbedBuilder()
     .setTitle("Poker")
-    .setColor(colorMap[result.outcome])
-    .addFields(
-      { name: "Your Hand", value: handStr(result.player), inline: true },
-      { name: "Bot's Hand", value: handStr(result.bot), inline: true },
-      {
-        name: "Result",
-        value:
-          result.outcome === "win"
-            ? `You won **$${Math.abs(result.change)}!**`
-            : result.outcome === "lose"
-              ? `You lost **$${Math.abs(result.change)}.**`
-              : "It's a tie. No change.",
-      },
-      { name: "Balance", value: `$${result.balance}`, inline: false }
-    )
-    .setFooter({ text: `Requested by ${interaction.user.username}` })
-    .setTimestamp();
+    .setDescription(`Your hand:\n${handMsg}\n\nSelect cards to **keep** then click "Draw".`)
+    .setColor("Gold");
 
-  await interaction.editReply({ embeds: [embed] });
-  await updateTopRoles(client);
+  const buttons = new ActionRowBuilder().addComponents(
+    ...hand.map((_,i)=>
+      new ButtonBuilder()
+        .setCustomId(`keep_${i}`)
+        .setLabel(`${i+1}`)
+        .setStyle(ButtonStyle.Secondary)
+    ),
+    new ButtonBuilder().setCustomId("draw").setLabel("Draw").setStyle(ButtonStyle.Success)
+  );
+
+  const reply = await interaction.reply({ embeds:[embed], components:[buttons] });
+  const collector = reply.createMessageComponentCollector({ time:15000 });
+
+  const kept = new Set();
+
+  collector.on("collect", async btn => {
+    if (btn.user.id !== interaction.user.id) return btn.reply({ content:"Not your game.", ephemeral:true });
+
+    if (btn.customId.startsWith("keep_")) {
+      const i = parseInt(btn.customId.split("_")[1]);
+      if (kept.has(i)) kept.delete(i);
+      else kept.add(i);
+      const newButtons = new ActionRowBuilder().addComponents(
+        ...hand.map((_,j)=>
+          new ButtonBuilder()
+            .setCustomId(`keep_${j}`)
+            .setLabel(`${j+1}`)
+            .setStyle(kept.has(j) ? ButtonStyle.Success : ButtonStyle.Secondary)
+        ),
+        new ButtonBuilder().setCustomId("draw").setLabel("Draw").setStyle(ButtonStyle.Success)
+      );
+      await btn.update({ components:[newButtons] });
+    } else if (btn.customId === "draw") {
+      collector.stop("drawn");
+      await btn.deferUpdate();
+    }
+  });
+
+  collector.on("end", async (_, reason) => {
+    if (reason !== "drawn") return interaction.editReply({ content:"Timed out.", embeds:[], components:[] });
+
+    for (let i=0;i<5;i++) {
+      if (!kept.has(i)) hand[i] = deck.pop();
+    }
+
+    const result = rankHand(hand);
+    const win = result.mult > 0;
+    const change = win ? Math.floor(amount * (result.mult - 1)) : -amount;
+    balance += change;
+    await userRef.set({ balance, username: interaction.user.username });
+
+    const endEmbed = new EmbedBuilder()
+      .setTitle("Final Hand")
+      .setDescription(`${hand.join("  ")}\n**${result.name}**\n${win ? `Won $${change}` : `Lost $${-change}`}\nBalance: $${balance}`)
+      .setColor(win ? "Green" : "Red");
+
+    await interaction.editReply({ embeds:[endEmbed], components:[] });
+    await updateTopRoles(client);
+  });
 }
