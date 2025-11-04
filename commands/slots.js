@@ -3,7 +3,7 @@ import { db } from "../firebase.js";
 import { updateTopRoles } from "../topRoles.js";
 
 const ALLOWED_CHANNEL_ID = "1434934862430867487";
-const MAX_BET = 200;
+const MAX_BET = 300;
 
 // ---- EDIT THIS SECTION ONLY ----
 const symbols = [
@@ -67,7 +67,7 @@ export async function execute(interaction) {
   });
 
   const embed = new EmbedBuilder()
-    .setTitle("🎰 Slot Machine 🎰")
+    .setTitle("Slot Machine")
     .setColor(color)
     .setDescription(`${row.join(" | ")}\n\n${win ? `You won $${winnings}!` : `You lost $${amount}.`}`)
     .setFooter({ text: `Balance updates automatically.` });
