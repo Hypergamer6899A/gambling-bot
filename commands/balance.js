@@ -15,7 +15,7 @@ export async function execute(interaction) {
     });
   }
 
-  await interaction.deferReply();
+  if (!interaction.deferred && !interaction.replied) await interaction.deferReply();
 
   const id = interaction.user.id;
   const ref = db.collection("users").doc(id);
