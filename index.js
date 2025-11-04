@@ -36,7 +36,7 @@ for (const file of commandFiles) {
 }
 
 // --- Ready event ---
-client.once("clientReady", async () => {
+client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   try {
     await updateTopRoles(client);
@@ -57,18 +57,16 @@ client.on("interactionCreate", async (interaction) => {
   if (!command) return;
 
   try {
-    // Defer reply to avoid Unknown Interaction errors on slow commands
     if (!interaction.deferred && !interaction.replied) {
       await interaction.deferReply({ ephemeral: false });
     }
-
     await command.execute(interaction, client);
   } catch (err) {
     console.error(`❌ Error in /${interaction.commandName}:`, err);
     if (!interaction.replied && !interaction.deferred) {
       await interaction.reply({ content: "Error executing command.", ephemeral: true });
     } else {
-      await interaction.followUp({ content: "Error executing command.", ephemeral: true });
+      await interaction.editReply({ content: "Error executing command.", components: [] });
     }
   }
 });
