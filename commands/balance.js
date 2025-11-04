@@ -1,4 +1,4 @@
-iimport { SlashCommandBuilder } from "discord.js";
+import { SlashCommandBuilder } from "discord.js";
 import { db } from "../firebase.js";
 
 const ALLOWED_CHANNEL_ID = "1434934862430867487";
@@ -10,10 +10,7 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction) {
   try {
     if (interaction.channel.id !== ALLOWED_CHANNEL_ID) {
-      return interaction.reply({
-        content: `You can only use this command in <#${ALLOWED_CHANNEL_ID}>.`,
-        ephemeral: true
-      });
+      return interaction.reply({ content: `You can only use this command in <#${ALLOWED_CHANNEL_ID}>.`, ephemeral: true });
     }
 
     await interaction.deferReply({ ephemeral: true });
@@ -29,8 +26,6 @@ export async function execute(interaction) {
     await interaction.editReply(`<@${id}>, you have $${balance.toLocaleString()}.`);
   } catch (err) {
     console.error(err);
-    try {
-      await interaction.editReply("Error fetching balance.");
-    } catch {}
+    try { await interaction.editReply("Error fetching balance."); } catch {}
   }
 }
