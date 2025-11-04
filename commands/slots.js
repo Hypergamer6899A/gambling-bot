@@ -7,12 +7,12 @@ const MAX_BET = 300;
 
 // ---- EDIT THIS SECTION ONLY ----
 const symbols = [
-  "<:waxedlightlyweatheredcutcopperst:1429946087921287168>", // or "<:cherry:emoji_id>"
-  "<:testblock:1429946118229196810>",
-  "<:scaryhorrormonster:1429946136784932864>",
-  "<:sus:1429945939006853170>",
-  "<:Warden:1429946036809371769> ",
-  "<:deaththreat:1435328355657449709>"
+  { emoji: "<:waxedlightlyweatheredcutcopperst:1429946087921287168>", multiplier: 5 },
+  { emoji: "<:testblock:1429946118229196810>", multiplier: 3 },
+  { emoji: "<:scaryhorrormonster:1429946136784932864>", multiplier: 4 },
+  { emoji: "<:sus:1429945939006853170>", multiplier: 6 },
+  { emoji: "<:Warden:1429946036809371769>", multiplier: 2 },
+  { emoji: "<:deaththreat:1435328355657449709>", multiplier: 10 }
 ];
 // --------------------------------
 
@@ -40,12 +40,13 @@ export async function execute(interaction) {
     return interaction.editReply(`Bet must be between 1 and ${MAX_BET}.`);
 
   const userRef = db.collection("users").doc(interaction.user.id);
-  const user = await userRef.get();
-  const balance = user.exists ? user.data().balance : 1000;
+  const userDoc = await userRef.get();
+  const balance = userDoc.exists ? userDoc.data().balance : 1000;
+
   if (balance < amount)
     return interaction.editReply("Not enough money.");
 
-  // Deduct bet
+  // Deduct bet immediately
   await userRef.set(
     { balance: balance - amount, username: interaction.user.username },
     { merge: true }
@@ -54,23 +55,28 @@ export async function execute(interaction) {
   // Spin slots
   const spin = () => symbols[Math.floor(Math.random() * symbols.length)];
   const row = [spin(), spin(), spin()];
-  const win = row.every(s => s === row[0]);
 
-  const winnings = win ? amount * 5 : 0;
+  // Check if all emojis match
+  const win = row.every(s => s.emoji === row[0].emoji);
+
+  // Calculate winnings based on symbol multiplier
+  const winnings = win ? amount * row[0].multiplier : 0;
   const color = win ? "#00FF00" : "#FF0000";
 
-  // Update balance
+  // Update balance with winnings
+  let newBalance = balance - amount + winnings;
   await db.runTransaction(async (t) => {
     const doc = await t.get(userRef);
     const current = doc.exists ? doc.data().balance : 0;
     t.set(userRef, { balance: current + winnings, username: interaction.user.username }, { merge: true });
+    newBalance = current + winnings;
   });
 
   const embed = new EmbedBuilder()
-    .setTitle("Slot Machine")
+    .setTitle("🎰 Slot Machine 🎰")
     .setColor(color)
-    .setDescription(`${row.join(" | ")}\n\n${win ? `You won $${winnings}!` : `You lost $${amount}.`}`)
-    .setFooter({ text: `Balance updates automatically.` });
+    .setDescription(`${row.map(r => r.emoji).join(" | ")}\n\n${win ? `You won $${winnings}!` : `You lost $${amount}.`}`)
+    .setFooter({ text: `Current Balance: $${newBalance}` });
 
   await interaction.editReply({ embeds: [embed] });
   await updateTopRoles(interaction.client);
