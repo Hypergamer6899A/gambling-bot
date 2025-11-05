@@ -251,7 +251,7 @@ client.on("messageCreate", async (message) => {
               .setDescription(`Your hand: ${playerHand.join(" ")}\nYou busted!`);
             await i.update({ embeds: [embed], components: [] });
             collector.stop("bust");
-            await message.reply(`${message.author}, you busted! Lost **${betAmount}**.`);
+            await message.reply(`${message.author}, you busted! Lost $**${betAmount}**.`);
           } else {
             embed
               .setColor(0x808080)
@@ -271,10 +271,10 @@ client.on("messageCreate", async (message) => {
 
           if (dealerSum > 21 || playerSum > dealerSum) {
             balance += betAmount * 2;
-            resultMsg = `You won! Dealer had ${dealerHand.join(" ")}. Won **${betAmount}**.`;
+            resultMsg = `You won! Dealer had ${dealerHand.join(" ")}. Won $**${betAmount}**.`;
             color = 0x57f287; // green
           } else if (playerSum < dealerSum) {
-            resultMsg = `You lost! Dealer had ${dealerHand.join(" ")}. Lost **${betAmount}**.`;
+            resultMsg = `You lost! Dealer had ${dealerHand.join(" ")}. Lost $**${betAmount}**.`;
             color = 0xed4245; // red
           } else {
             balance += betAmount; // tie
