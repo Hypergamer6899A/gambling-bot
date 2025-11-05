@@ -85,7 +85,7 @@ client.on("messageCreate", async (message) => {
     }
 
     balance += 100;
-    await userRef.set({ balance, lastClaim: now }, { merge: true });
+    await userRef.set({ balance, lastClaim: userData.lastClaim ?? 0 }, { merge: true });
     return message.reply(`${message.author}, you claimed **$100**! New balance: **${balance}**.`);
   }
 
