@@ -34,6 +34,15 @@ initializeApp({
 const db = getFirestore();
 console.log("[DEBUG] Firestore initialized");
 
+import fs from "fs";
+const LOCK_FILE = "/tmp/bot.lock";
+
+if (fs.existsSync(LOCK_FILE)) {
+  console.log("[DEBUG] Another instance detected, exiting...");
+  process.exit(0);
+}
+fs.writeFileSync(LOCK_FILE, "running");
+
 // --- Discord Client Setup ---
 const client = new Client({
   intents: [
