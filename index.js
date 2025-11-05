@@ -11,7 +11,7 @@ const {
   FIREBASE_CLIENT_EMAIL,
   FIREBASE_PRIVATE_KEY,
   FIREBASE_PROJECT_ID,
-  THINKING_EMOJI, // e.g. <:thinking:1234567890>
+  THINKING_EMOJI, // add your custom emoji ID here
 } = process.env;
 
 // --- Firebase Setup ---
@@ -30,12 +30,29 @@ const client = new Client({
   partials: [Partials.Channel],
 });
 
+// --- Presence ---
 client.once("ready", () => {
   console.log(`Logged in as ${client.user.tag}`);
   client.user.setPresence({
     activities: [{ name: "/help | LETS GO GAMBLING", type: 0 }],
     status: "online",
   });
+});
+
+// --- Slash Command: /help ---
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName === "help") {
+    await interaction.deferReply({ ephemeral: true });
+    await interaction.editReply(
+      "**Available Commands:**\n" +
+        "`/help` - Show this help menu\n" +
+        "`!g balance` - Check your balance\n" +
+        "`!g roulette <red|black|odd|even> <amount>` - Bet on roulette\n" +
+        "`!g claim` - If broke, claim 100 coins every 24 hours\n" +
+        "`!g leaderboard` - Show top 5 richest players (with your rank)"
+    );
+  }
 });
 
 // --- Message Commands ---
@@ -46,20 +63,23 @@ client.on("messageCreate", async (message) => {
 
   const args = message.content.trim().split(/\s+/);
   const command = args[1]?.toLowerCase();
-  const userRef = db.collection("users").doc(message.author.id);
-  const userDoc = await userRef.get();
-  let userData = userDoc.exists ? userDoc.data() : { balance: 1000, lastClaim: 0 };
-  let balance = userData.balance ?? 1000;
 
-  // --- Add thinking emoji ---
-  let reactMsg = null;
+  // React with thinking emoji if defined
+  let reacted = false;
   if (THINKING_EMOJI) {
     try {
-      reactMsg = await message.react(THINKING_EMOJI);
+      await message.react(THINKING_EMOJI);
+      reacted = true;
     } catch {}
   }
 
   try {
+    const userRef = db.collection("users").doc(message.author.id);
+    const userDoc = await userRef.get();
+    const userData = userDoc.exists ? userDoc.data() : {};
+    let balance = userData.balance ?? 1000;
+    const lastClaim = userData.lastClaim ?? 0;
+
     // --- !g balance ---
     if (command === "balance") {
       await message.reply(`${message.author}, your balance is **${balance}**.`);
@@ -67,33 +87,40 @@ client.on("messageCreate", async (message) => {
 
     // --- !g claim ---
     else if (command === "claim") {
-      if (balance > 0)
-        return message.reply(`${message.author}, you still have money. You can only claim when broke (0 balance).`);
-
-      const now = Date.now();
-      const dayMs = 24 * 60 * 60 * 1000;
-      if (now - (userData.lastClaim || 0) < dayMs) {
-        const hoursLeft = Math.ceil((dayMs - (now - (userData.lastClaim || 0))) / (1000 * 60 * 60));
-        return message.reply(`${message.author}, you can claim again in **${hoursLeft} hour(s)**.`);
+      if (balance > 0) {
+        await message.reply(`${message.author}, you still have money. You can only claim when broke.`);
+      } else {
+        const now = Date.now();
+        const dayMs = 24 * 60 * 60 * 1000;
+        if (now - lastClaim < dayMs) {
+          const hoursLeft = Math.ceil((dayMs - (now - lastClaim)) / (1000 * 60 * 60));
+          await message.reply(`${message.author}, you can claim again in **${hoursLeft} hour(s)**.`);
+        } else {
+          balance += 100;
+          await userRef.set({ balance, lastClaim: now }, { merge: true });
+          await message.reply(`${message.author}, you claimed **$100**! New balance: **${balance}**.`);
+        }
       }
-
-      balance += 100;
-      await userRef.set({ balance, lastClaim: now }, { merge: true });
-      await message.reply(`${message.author}, you claimed **$100**! New balance: **${balance}**.`);
     }
 
     // --- !g roulette ---
     else if (command === "roulette") {
-      const betType = args[2];
+      const betType = args[2]?.toLowerCase();
       const betAmount = parseInt(args[3]);
-      if (!betType || isNaN(betAmount))
-        return message.reply(`${message.author}, usage: \`!g roulette <red|black|odd|even> <amount>\``);
-      if (betAmount <= 0 || betAmount > balance)
-        return message.reply(`${message.author}, invalid bet amount.`);
+      if (!betType || isNaN(betAmount)) {
+        await message.reply(`${message.author}, usage: \`!g roulette <red|black|odd|even> <amount>\``);
+        return;
+      }
+      if (betAmount <= 0 || betAmount > balance) {
+        await message.reply(`${message.author}, invalid bet amount.`);
+        return;
+      }
 
       const outcomes = ["red", "black", "odd", "even"];
-      if (!outcomes.includes(betType))
-        return message.reply(`${message.author}, valid bets: red, black, odd, even.`);
+      if (!outcomes.includes(betType)) {
+        await message.reply(`${message.author}, valid bets: red, black, odd, even.`);
+        return;
+      }
 
       const spin = Math.floor(Math.random() * 36) + 1;
       const color = spin === 0 ? "green" : spin % 2 === 0 ? "black" : "red";
@@ -103,7 +130,7 @@ client.on("messageCreate", async (message) => {
       if (win) balance += betAmount;
       else balance -= betAmount;
 
-      await userRef.set({ balance, lastClaim: userData.lastClaim ?? 0 }, { merge: true });
+      await userRef.set({ balance, lastClaim }, { merge: true });
       await message.reply(
         `${message.author}, you ${win ? "won" : "lost"}! The ball landed on **${spin} (${color})**. New balance: **${balance}**.`
       );
@@ -114,13 +141,11 @@ client.on("messageCreate", async (message) => {
       try {
         const snapshot = await db.collection("users").orderBy("balance", "desc").get();
         if (snapshot.empty) {
-          return message.reply({
-            content: "No users found in the leaderboard.",
-            allowedMentions: { parse: [] },
-          });
+          await message.reply("No users found in the leaderboard.");
+          return;
         }
 
-        const allUsers = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        const allUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         const top5 = allUsers.slice(0, 5);
 
         const lines = await Promise.all(
@@ -131,26 +156,23 @@ client.on("messageCreate", async (message) => {
           })
         );
 
-        const userIndex = allUsers.findIndex((u) => u.id === message.author.id);
+        const userIndex = allUsers.findIndex(u => u.id === message.author.id);
         if (userIndex >= 5) {
           const userBalance = allUsers[userIndex]?.balance ?? 0;
           lines.push(`\nYour Rank: ${userIndex + 1} - ${userBalance}`);
         }
 
-        await message.reply({
-          content: `**Top 5 Richest Players:**\n${lines.join("\n")}`,
-          allowedMentions: { parse: [] },
-        });
+        await message.reply(`**Top 5 Richest Players:**\n${lines.join("\n")}`);
       } catch (err) {
         console.error("Leaderboard error:", err);
         await message.reply("Something went wrong fetching the leaderboard.");
       }
     }
   } finally {
-    // --- Remove thinking emoji ---
-    if (reactMsg) {
+    // Remove thinking emoji
+    if (reacted) {
       try {
-        await reactMsg.users.remove(client.user.id);
+        await message.reactions.removeAll();
       } catch {}
     }
   }
