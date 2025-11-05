@@ -139,12 +139,13 @@ if (command === "leaderboard") {
   for (let i = 0; i < top5.length; i++) {
     const user = await client.users.fetch(top5[i].id).catch(() => null);
     const username = user ? user.username : "Unknown User";
-    leaderboard += `${i + 1}. ${username} - **${top5[i].balance}**\n`;
+    leaderboard += `${i + 1}. ${username} — **${top5[i].balance}**\n`;
   }
 
   const userIndex = allUsers.findIndex((u) => u.id === message.author.id);
   if (userIndex >= 5) {
-    leaderboard += `\nYour Rank: **${userIndex + 1}** - ${balance}`;
+    const userBalance = allUsers[userIndex]?.balance ?? 0;
+    leaderboard += `\nYour Rank: **${userIndex + 1}** — ${userBalance}`;
   }
 
   return message.reply({ content: leaderboard, allowedMentions: { repliedUser: false } });
