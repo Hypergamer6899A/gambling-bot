@@ -44,18 +44,12 @@ const client = new Client({
   partials: [Partials.Channel],
 });
 
-// --- Prevent Multiple Instances ---
+// --- Prevent Multiple Bot Instances ---
 if (global.__botStarted) {
   console.log("[DEBUG] Duplicate instance detected — exiting.");
   process.exit(0);
 }
 global.__botStarted = true;
-
-// --- Clean previous handlers (Render reload fix) ---
-client.removeAllListeners("messageCreate");
-
-// --- Track Processed Messages ---
-const processedMessages = new Set();
 
 // --- Presence ---
 client.once("ready", () => {
@@ -66,52 +60,51 @@ client.once("ready", () => {
   });
 });
 
-// --- Message Handler ---
-client.on("messageCreate", async (message) => {
-  try {
-    if (message.author.bot) return;
-    if (message.channel.id !== CHANNEL_ID) return;
-    if (!message.content.startsWith("!g")) return;
+// --- Message Handler (single instance) ---
+if (!global.__listenerAdded) {
+  const processedMessages = new Set();
 
-    if (processedMessages.has(message.id)) {
-      console.log(`[DEBUG] Ignored duplicate message ID ${message.id}`);
-      return;
-    }
-    processedMessages.add(message.id);
-    setTimeout(() => processedMessages.delete(message.id), 30000);
+  client.on("messageCreate", async (message) => {
+    try {
+      if (message.author.bot) return;
+      if (message.channel.id !== CHANNEL_ID) return;
+      if (!message.content.startsWith("!g")) return;
 
-    const args = message.content.trim().split(/\s+/);
-    const command = args[1]?.toLowerCase();
+      if (processedMessages.has(message.id)) return;
+      processedMessages.add(message.id);
+      setTimeout(() => processedMessages.delete(message.id), 30000);
 
-    let reacted = false;
-    if (THINKING_EMOJI) {
-      try {
-        await message.react(THINKING_EMOJI);
-        reacted = true;
-      } catch (err) {
-        console.log("[DEBUG] Failed to react:", err.message);
+      const args = message.content.trim().split(/\s+/);
+      const command = args[1]?.toLowerCase();
+
+      let reacted = false;
+      if (THINKING_EMOJI) {
+        try {
+          await message.react(THINKING_EMOJI);
+          reacted = true;
+        } catch {}
       }
+
+      await handleCommand(command, args, message, db, client);
+
+      if (reacted) await message.reactions.removeAll();
+    } catch (err) {
+      console.error("[ERROR] in messageCreate:", err);
     }
+  });
 
-    await handleCommand(command, args, message, db, client);
-
-    if (reacted) await message.reactions.removeAll();
-  } catch (err) {
-    console.error("[ERROR] in messageCreate:", err);
-  }
-});
+  global.__listenerAdded = true;
+}
 
 // --- Command Logic ---
 async function handleCommand(command, args, message, db, client) {
   const userRef = db.collection("users").doc(message.author.id);
-  let userDoc = await userRef.get();
-  let userData = userDoc.exists ? userDoc.data() : {};
+  const userDoc = await userRef.get();
+  const userData = userDoc.exists ? userDoc.data() : {};
   let balance = userData.balance ?? 1000;
   let lastClaim = userData.lastClaim ?? 0;
 
   if (!userDoc.exists) await userRef.set({ balance, lastClaim });
-
-  console.log(`[DEBUG] ${message.author.username} command: ${command}, balance: ${balance}`);
 
   switch (command) {
     case "help":
@@ -149,7 +142,6 @@ async function handleCommand(command, args, message, db, client) {
       const betAmount = parseInt(args[3]);
       if (!betType || isNaN(betAmount))
         return message.reply(`${message.author}, usage: \`!g roulette <red|black|odd|even> <amount>\``);
-
       if (betAmount <= 0 || betAmount > balance)
         return message.reply(`${message.author}, invalid bet amount.`);
 
@@ -172,115 +164,114 @@ async function handleCommand(command, args, message, db, client) {
 
     case "leaderboard": {
       const snapshot = await db.collection("users").orderBy("balance", "desc").get();
-      const allUsers = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-      const top5 = allUsers.slice(0, 5);
-
+      const top5 = snapshot.docs.slice(0, 5);
       const lines = await Promise.all(
-        top5.map(async (u, i) => {
-          const user = await client.users.fetch(u.id).catch(() => null);
+        top5.map(async (d, i) => {
+          const u = d.data();
+          const user = await client.users.fetch(d.id).catch(() => null);
           return `${i + 1}. ${user?.username || "Unknown"} - $${u.balance}`;
         })
       );
-
       return message.reply(`**Top 5 Richest Players:**\n${lines.join("\n")}`);
     }
 
-case "blackjack": {
-  const betAmount = parseInt(args[2]);
-  if (isNaN(betAmount) || betAmount <= 0 || betAmount > balance)
-    return message.reply(`${message.author}, invalid bet amount.`);
+    case "blackjack": {
+      const betAmount = parseInt(args[2]);
+      if (isNaN(betAmount) || betAmount <= 0 || betAmount > balance)
+        return message.reply(`${message.author}, invalid bet amount.`);
 
-  const suits = ["♠", "♥", "♦", "♣"];
-  const values = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
-  const deck = suits.flatMap((s) => values.map((v) => `${v}${s}`)).sort(() => Math.random() - 0.5);
-  const draw = () => deck.pop();
+      const suits = ["♠", "♥", "♦", "♣"];
+      const values = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+      const deck = suits.flatMap((s) => values.map((v) => `${v}${s}`)).sort(() => Math.random() - 0.5);
+      const draw = () => deck.pop();
 
-  const calc = (hand) => {
-    let sum = 0, aces = 0;
-    for (const c of hand) {
-      const v = c.slice(0, -1);
-      if (["J", "Q", "K"].includes(v)) sum += 10;
-      else if (v === "A") { sum += 11; aces++; }
-      else sum += parseInt(v);
-    }
-    while (sum > 21 && aces--) sum -= 10;
-    return sum;
-  };
+      const calc = (hand) => {
+        let sum = 0,
+          aces = 0;
+        for (const c of hand) {
+          const v = c.slice(0, -1);
+          if (["J", "Q", "K"].includes(v)) sum += 10;
+          else if (v === "A") {
+            sum += 11;
+            aces++;
+          } else sum += parseInt(v);
+        }
+        while (sum > 21 && aces--) sum -= 10;
+        return sum;
+      };
 
-  const player = [draw(), draw()];
-  const dealer = [draw(), draw()];
-  const embed = new EmbedBuilder()
-    .setTitle("Blackjack")
-    .setColor(0x808080)
-    .setDescription(`Your hand: ${player.join(" ")}\nDealer shows: ${dealer[0]}\n\nHit or Stand?`);
+      const player = [draw(), draw()];
+      const dealer = [draw(), draw()];
 
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("hit").setLabel("Hit").setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId("stand").setLabel("Stand").setStyle(ButtonStyle.Secondary)
-  );
+      const embed = new EmbedBuilder()
+        .setTitle("Blackjack")
+        .setColor(0x808080)
+        .setDescription(`Your hand: ${player.join(" ")}\nDealer shows: ${dealer[0]}\n\nHit or Stand?`);
 
-  const msg = await message.reply({ embeds: [embed], components: [row] });
-  const filter = (i) => i.user.id === message.author.id;
-  const collector = msg.createMessageComponentCollector({ filter, time: 60000 });
-
-  collector.on("collect", async (i) => {
-    if (i.customId === "hit") {
-      player.push(draw());
-      const sum = calc(player);
-
-      if (sum > 21) {
-        // Bust: deduct bet once
-        balance -= betAmount;
-        await userRef.set({ balance }, { merge: true });
-
-        embed
-          .setColor(0xed4245)
-          .setDescription(`Your hand: ${player.join(" ")}\nYou busted!\n\n**Lost $${betAmount}. New balance: $${balance}**`);
-        await i.update({ embeds: [embed], components: [] });
-        collector.stop();
-        return;
-      }
-
-      embed.setDescription(`Your hand: ${player.join(" ")}\nDealer shows: ${dealer[0]}`);
-      await i.update({ embeds: [embed], components: [row] });
-    } else { // stand
-      let dSum = calc(dealer);
-      while (dSum < 17) {
-        dealer.push(draw());
-        dSum = calc(dealer);
-      }
-      const pSum = calc(player);
-      let result, color;
-
-      if (dSum > 21 || pSum > dSum) {
-        balance += betAmount * 2;
-        result = `You won! Dealer had ${dealer.join(" ")}.`;
-        color = 0x57f287;
-      } else if (pSum < dSum) {
-        balance -= betAmount;
-        result = `You lost! Dealer had ${dealer.join(" ")}.`;
-        color = 0xed4245;
-      } else {
-        balance += betAmount;
-        result = `It's a tie! Dealer had ${dealer.join(" ")}.`;
-        color = 0xfee75c;
-      }
-
-      await userRef.set({ balance }, { merge: true });
-      embed.setColor(color).setDescription(
-        `Your hand: ${player.join(" ")}\nDealer: ${dealer.join(" ")}\n\n${result}\n**Balance:** $${balance}`
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("hit").setLabel("Hit").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId("stand").setLabel("Stand").setStyle(ButtonStyle.Secondary)
       );
-      await i.update({ embeds: [embed], components: [] });
-      collector.stop();
-    }
-  });
 
-  collector.on("end", (_, reason) => {
-    if (reason === "time")
-      message.reply(`${message.author}, blackjack timed out.`);
-  });
-  return;
-}
+      const msg = await message.reply({ embeds: [embed], components: [row] });
+      const filter = (i) => i.user.id === message.author.id;
+      const collector = msg.createMessageComponentCollector({ filter, time: 60000 });
+
+      collector.on("collect", async (i) => {
+        if (i.customId === "hit") {
+          player.push(draw());
+          const sum = calc(player);
+          if (sum > 21) {
+            embed.setColor(0xed4245).setDescription(
+              `Your hand: ${player.join(" ")}\nYou busted!\n\n**Lost $${betAmount}. New balance: $${balance - betAmount}**`
+            );
+            balance -= betAmount;
+            await userRef.set({ balance }, { merge: true });
+            await i.update({ embeds: [embed], components: [] });
+            collector.stop();
+            return;
+          }
+          embed.setDescription(`Your hand: ${player.join(" ")}\nDealer shows: ${dealer[0]}`);
+          await i.update({ embeds: [embed], components: [row] });
+        } else { // stand
+          let dSum = calc(dealer);
+          while (dSum < 17) {
+            dealer.push(draw());
+            dSum = calc(dealer);
+          }
+          const pSum = calc(player);
+          let result, color;
+
+          if (dSum > 21 || pSum > dSum) {
+            balance += betAmount * 2;
+            result = `You won! Dealer had ${dealer.join(" ")}.`;
+            color = 0x57f287;
+          } else if (pSum < dSum) {
+            balance -= betAmount;
+            result = `You lost! Dealer had ${dealer.join(" ")}.`;
+            color = 0xed4245;
+          } else {
+            balance += betAmount;
+            result = `It's a tie! Dealer had ${dealer.join(" ")}.`;
+            color = 0xfee75c;
+          }
+
+          await userRef.set({ balance }, { merge: true });
+          embed.setColor(color).setDescription(
+            `Your hand: ${player.join(" ")}\nDealer: ${dealer.join(
+              " "
+            )}\n\n${result}\n**Balance:** $${balance}`
+          );
+          await i.update({ embeds: [embed], components: [] });
+          collector.stop();
+        }
+      });
+
+      collector.on("end", (_, reason) => {
+        if (reason === "time") message.reply(`${message.author}, blackjack timed out.`);
+      });
+      return;
+    }
 
     default:
       return message.reply(`${message.author}, invalid command. Use \`!g help\`.`);
@@ -289,7 +280,7 @@ case "blackjack": {
 
 // --- Express Keepalive ---
 const app = express();
-app.get("/", (req, res) => res.send("Bot is running."));
+app.get("/", (_, res) => res.send("Bot is running."));
 app.listen(PORT || 3000, () => console.log(`[DEBUG] Listening on port ${PORT || 3000}`));
 
 // --- Login ---
