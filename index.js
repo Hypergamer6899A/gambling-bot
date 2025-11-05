@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } from "discord.js";
+import { Client, GatewayIntentBits, Partials, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from "discord.js";
 import express from "express";
 import "dotenv/config";
 import { initializeApp, cert } from "firebase-admin/app";
@@ -6,11 +6,12 @@ import { getFirestore } from "firebase-admin/firestore";
 
 const {
   TOKEN,
+  GUILD_ID,
   CHANNEL_ID,
   FIREBASE_CLIENT_EMAIL,
   FIREBASE_PRIVATE_KEY,
   FIREBASE_PROJECT_ID,
-  THINKING_EMOJI,
+  THINKING_EMOJI, // custom emoji ID
 } = process.env;
 
 // --- Firebase Setup ---
@@ -40,22 +41,25 @@ client.once("ready", () => {
   });
 });
 
-// --- Slash Command: /help ---
-client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-  if (interaction.commandName === "help") {
-    await interaction.deferReply({ ephemeral: true });
-    await interaction.editReply(
-      "**Available Commands:**\n" +
-        "`/help` - Show this help menu\n" +
-        "`!g balance` - Check your balance\n" +
-        "`!g roulette <red|black|odd|even> <amount>` - Bet on roulette\n" +
-        "`!g claim` - If broke, claim 100 coins every 24 hours\n" +
-        "`!g leaderboard` - Show top 5 richest players (with your rank)\n" +
-        "`!g blackjack <bet>` - Play a game of blackjack with embedded messages"
-    );
+// --- Utility Functions ---
+const drawCard = () => {
+  const suits = ["♠️", "♥️", "♣️", "♦️"];
+  const ranks = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+  const suit = suits[Math.floor(Math.random() * suits.length)];
+  const rank = ranks[Math.floor(Math.random() * ranks.length)];
+  return { suit, rank };
+};
+
+const handValue = (hand) => {
+  let value = 0, aces = 0;
+  for (const card of hand) {
+    if (["J", "Q", "K"].includes(card.rank)) value += 10;
+    else if (card.rank === "A") { value += 11; aces += 1; }
+    else value += parseInt(card.rank);
   }
-});
+  while (value > 21 && aces > 0) { value -= 10; aces -= 1; }
+  return value;
+};
 
 // --- Message Commands ---
 client.on("messageCreate", async (message) => {
@@ -69,10 +73,7 @@ client.on("messageCreate", async (message) => {
   // React with thinking emoji if defined
   let reacted = false;
   if (THINKING_EMOJI) {
-    try {
-      await message.react(THINKING_EMOJI);
-      reacted = true;
-    } catch {}
+    try { await message.react(THINKING_EMOJI); reacted = true; } catch {}
   }
 
   try {
@@ -81,6 +82,20 @@ client.on("messageCreate", async (message) => {
     const userData = userDoc.exists ? userDoc.data() : {};
     let balance = userData.balance ?? 1000;
     const lastClaim = userData.lastClaim ?? 0;
+
+    // --- !g help ---
+    if (command === "help") {
+      await message.reply(
+        "**Available Commands:**\n" +
+          "`!g help` - Show this help menu\n" +
+          "`!g balance` - Check your balance\n" +
+          "`!g roulette <red|black|odd|even> <amount>` - Bet on roulette\n" +
+          "`!g claim` - If broke, claim 100 coins every 24 hours\n" +
+          "`!g leaderboard` - Show top 5 richest players (with your rank)\n" +
+          "`!g blackjack <bet>` - Play a game of blackjack with embedded messages"
+      );
+      return;
+    }
 
     // --- !g balance ---
     if (command === "balance") {
@@ -173,117 +188,100 @@ client.on("messageCreate", async (message) => {
 
     // --- !g blackjack ---
     else if (command === "blackjack") {
-      const betAmount = parseInt(args[2]);
-      if (isNaN(betAmount) || betAmount <= 0 || betAmount > balance) {
+      const bet = parseInt(args[2]);
+      if (isNaN(bet) || bet <= 0 || bet > balance) {
         await message.reply(`${message.author}, invalid bet amount.`);
         return;
       }
 
-      const suits = ["♠", "♥", "♦", "♣"];
-      const values = [
-        { name: "A", val: 11 }, { name: "2", val: 2 }, { name: "3", val: 3 }, { name: "4", val: 4 },
-        { name: "5", val: 5 }, { name: "6", val: 6 }, { name: "7", val: 7 }, { name: "8", val: 8 },
-        { name: "9", val: 9 }, { name: "10", val: 10 }, { name: "J", val: 10 }, { name: "Q", val: 10 }, { name: "K", val: 10 }
-      ];
+      balance -= bet;
+      await userRef.set({ balance, lastClaim }, { merge: true });
 
-      const drawCard = () => {
-        const v = values[Math.floor(Math.random() * values.length)];
-        const s = suits[Math.floor(Math.random() * suits.length)];
-        return { ...v, suit: s };
-      };
-
-      const calcTotal = (cards) => {
-        let total = cards.reduce((a, c) => a + c.val, 0);
-        let aces = cards.filter(c => c.name === "A").length;
-        while (total > 21 && aces > 0) {
-          total -= 10;
-          aces--;
-        }
-        return total;
-      };
-
-      const userCards = [drawCard(), drawCard()];
-      const botCards = [drawCard(), drawCard()];
+      let playerHand = [drawCard(), drawCard()];
+      const dealerHand = [drawCard(), drawCard()];
 
       const embed = new EmbedBuilder()
         .setTitle("Blackjack")
-        .setDescription(`Your cards: ${userCards.map(c => `${c.name}${c.suit}`).join(", ")} (Total: ${calcTotal(userCards)})\nBot's cards: ${botCards[0].name}${botCards[0].suit}, ❓`)
-        .setColor("Purple");
+        .setDescription(
+          `Your hand: ${playerHand.map(c => `${c.rank}${c.suit}`).join(" ")} (Value: ${handValue(playerHand)})\n` +
+          `Dealer shows: ${dealerHand[0].rank}${dealerHand[0].suit}`
+        )
+        .setColor("Random");
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId("hit").setLabel("Hit").setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId("stand").setLabel("Stand").setStyle(ButtonStyle.Secondary)
       );
 
-      const msg = await message.reply({ embeds: [embed], components: [row] });
+      const blackjackMsg = await message.reply({ embeds: [embed], components: [row] });
 
-      const collector = msg.createMessageComponentCollector({
-        componentType: ComponentType.Button,
-        time: 60000,
+      const collector = blackjackMsg.createMessageComponentCollector({
+        time: 60000
       });
-
-      let ended = false;
 
       collector.on("collect", async (i) => {
         if (i.user.id !== message.author.id) return;
-        if (ended) return;
-
         if (i.customId === "hit") {
-          userCards.push(drawCard());
-          const total = calcTotal(userCards);
-          embed.setDescription(`Your cards: ${userCards.map(c => `${c.name}${c.suit}`).join(", ")} (Total: ${total})\nBot's cards: ${botCards[0].name}${botCards[0].suit}, ❓`);
-          await i.update({ embeds: [embed] });
-
-          if (total > 21) {
-            balance -= betAmount;
-            await userRef.set({ balance, lastClaim }, { merge: true });
-            embed.setDescription(`Your cards: ${userCards.map(c => `${c.name}${c.suit}`).join(", ")} (Total: ${total})\nBot's cards: ${botCards[0].name}${botCards[0].suit}, ❓\n\nYou busted! You lost **${betAmount}**. New balance: **${balance}**.`);
-            await i.update({ embeds: [embed], components: [] });
-            ended = true;
+          playerHand.push(drawCard());
+          const value = handValue(playerHand);
+          const newEmbed = EmbedBuilder.from(embed)
+            .setDescription(
+              `Your hand: ${playerHand.map(c => `${c.rank}${c.suit}`).join(" ")} (Value: ${value})\n` +
+              `Dealer shows: ${dealerHand[0].rank}${dealerHand[0].suit}`
+            );
+          if (value > 21) {
+            await i.update({ embeds: [newEmbed], components: [] });
+            await message.reply(`${message.author}, you busted! Lost **${bet}**. New balance: **${balance}**.`);
+            collector.stop();
+          } else {
+            await i.update({ embeds: [newEmbed], components: [row] });
           }
         } else if (i.customId === "stand") {
-          let botTotal = calcTotal(botCards);
-          while (botTotal < 17) {
-            botCards.push(drawCard());
-            botTotal = calcTotal(botCards);
+          let dealerValue = handValue(dealerHand);
+          while (dealerValue < 17) {
+            dealerHand.push(drawCard());
+            dealerValue = handValue(dealerHand);
           }
-          const userTotal = calcTotal(userCards);
-          let resultText;
-          if (botTotal > 21 || userTotal > botTotal) {
-            balance += betAmount;
-            resultText = `You won **${betAmount}**! New balance: **${balance}**.`;
-          } else if (userTotal < botTotal) {
-            balance -= betAmount;
-            resultText = `You lost **${betAmount}**. New balance: **${balance}**.`;
+
+          const playerValue = handValue(playerHand);
+          let resultText = "";
+          if (dealerValue > 21 || playerValue > dealerValue) {
+            balance += bet * 2;
+            resultText = `You won! Won **${bet}**. New balance: **${balance}**.`;
+          } else if (playerValue === dealerValue) {
+            balance += bet;
+            resultText = `Push! Your bet is returned. Balance: **${balance}**.`;
           } else {
-            resultText = `It's a tie! Your balance remains **${balance}**.`;
+            resultText = `Dealer wins! Lost **${bet}**. New balance: **${balance}**.`;
           }
+
           await userRef.set({ balance, lastClaim }, { merge: true });
-          embed.setDescription(`Your cards: ${userCards.map(c => `${c.name}${c.suit}`).join(", ")} (Total: ${userTotal})\nBot's cards: ${botCards.map(c => `${c.name}${c.suit}`).join(", ")} (Total: ${botTotal})\n\n${resultText}`);
-          await i.update({ embeds: [embed], components: [] });
-          ended = true;
+
+          const finalEmbed = EmbedBuilder.from(embed)
+            .setDescription(
+              `Your hand: ${playerHand.map(c => `${c.rank}${c.suit}`).join(" ")} (Value: ${playerValue})\n` +
+              `Dealer hand: ${dealerHand.map(c => `${c.rank}${c.suit}`).join(" ")} (Value: ${dealerValue})`
+            );
+
+          await i.update({ embeds: [finalEmbed], components: [] });
+          await message.reply(`${message.author}, ${resultText}`);
+          collector.stop();
         }
       });
 
       collector.on("end", async () => {
-        if (!ended) {
-          embed.setDescription(`Game timed out. Your balance remains **${balance}**.`);
-          await msg.edit({ embeds: [embed], components: [] });
-        }
+        if (!collector.ended) return;
       });
     }
 
   } finally {
-    // Remove thinking emoji
     if (reacted) {
-      try {
-        await message.reactions.removeAll();
-      } catch {}
+      try { await message.reactions.removeAll(); } catch {}
     }
   }
 });
 
-// --- Express server for Render ---
+// --- Express server ---
 const app = express();
 app.get("/", (req, res) => res.send("Bot is running."));
 const PORT = process.env.PORT || 3000;
