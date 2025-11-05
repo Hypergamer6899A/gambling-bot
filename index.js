@@ -11,6 +11,7 @@ const {
   FIREBASE_CLIENT_EMAIL,
   FIREBASE_PRIVATE_KEY,
   FIREBASE_PROJECT_ID,
+  PROCESS_EMOJI_ID, // your custom animated emoji ID
 } = process.env;
 
 // --- Firebase Setup ---
@@ -62,105 +63,120 @@ client.on("messageCreate", async (message) => {
 
   const args = message.content.trim().split(/\s+/);
   const command = args[1]?.toLowerCase();
+  const userRef = db.collection("users").doc(message.author.id);
+  const userDoc = await userRef.get();
+  const userData = userDoc.exists ? userDoc.data() : { balance: 1000, lastClaim: 0 };
+  let balance = userData.balance ?? 1000;
 
-  // React with a custom animated emoji while processing
-  const thinkingEmoji = "<a:load36_128:1435687073175834756>"; // e.g. "123456789012345678"
-  await message.react(thinkingEmoji).catch(() => {});
+  const reactEmoji = message.guild?.emojis.cache.get(PROCESS_EMOJI_ID);
 
-  try {
-    const userRef = db.collection("users").doc(message.author.id);
-    const userDoc = await userRef.get();
-    let userData = userDoc.exists ? userDoc.data() : { balance: 1000, lastClaim: 0 };
-    let balance = userData.balance;
+  // Helper: react while thinking
+  if (reactEmoji) await message.react(reactEmoji);
 
-    // --- !g balance ---
-    if (command === "balance") {
-      return await message.reply(`${message.author}, your balance is **${balance}**.`);
+  // --- !g balance ---
+  if (command === "balance") {
+    await message.reply(`${message.author}, your balance is **${balance}**.`);
+    if (reactEmoji) await message.reactions.removeAll();
+    return;
+  }
+
+  // --- !g claim ---
+  if (command === "claim") {
+    if (balance > 0) {
+      await message.reply(`${message.author}, you still have money. You can only claim when broke (0 balance).`);
+      if (reactEmoji) await message.reactions.removeAll();
+      return;
     }
 
-    // --- !g claim ---
-    if (command === "claim") {
-      if (balance > 0)
-        return await message.reply(`${message.author}, you still have money. You can only claim when broke (0 balance).`);
+    const now = Date.now();
+    const lastClaim = userData.lastClaim ?? 0;
+    const dayMs = 24 * 60 * 60 * 1000;
 
-      const now = Date.now();
-      const dayMs = 24 * 60 * 60 * 1000;
-      if (now - (userData.lastClaim || 0) < dayMs) {
-        const hoursLeft = Math.ceil((dayMs - (now - userData.lastClaim)) / (1000 * 60 * 60));
-        return await message.reply(`${message.author}, you can claim again in **${hoursLeft} hour(s)**.`);
+    if (now - lastClaim < dayMs) {
+      const hoursLeft = Math.ceil((dayMs - (now - lastClaim)) / (1000 * 60 * 60));
+      await message.reply(`${message.author}, you can claim again in **${hoursLeft} hour(s)**.`);
+      if (reactEmoji) await message.reactions.removeAll();
+      return;
+    }
+
+    balance += 100;
+    await userRef.set({ balance, lastClaim: now }, { merge: true });
+    await message.reply(`${message.author}, you claimed **$100**! New balance: **${balance}**.`);
+    if (reactEmoji) await message.reactions.removeAll();
+    return;
+  }
+
+  // --- !g roulette ---
+  if (command === "roulette") {
+    const betType = args[2];
+    const betAmount = parseInt(args[3]);
+    if (!betType || isNaN(betAmount)) {
+      await message.reply(`${message.author}, usage: \`!g roulette <red|black|odd|even> <amount>\``);
+      if (reactEmoji) await message.reactions.removeAll();
+      return;
+    }
+    if (betAmount <= 0 || betAmount > balance) {
+      await message.reply(`${message.author}, invalid bet amount.`);
+      if (reactEmoji) await message.reactions.removeAll();
+      return;
+    }
+
+    const outcomes = ["red", "black", "odd", "even"];
+    if (!outcomes.includes(betType)) {
+      await message.reply(`${message.author}, valid bets: red, black, odd, even.`);
+      if (reactEmoji) await message.reactions.removeAll();
+      return;
+    }
+
+    const spin = Math.floor(Math.random() * 36) + 1;
+    const color = spin === 0 ? "green" : spin % 2 === 0 ? "black" : "red";
+    const parity = spin % 2 === 0 ? "even" : "odd";
+    const win = betType === color || betType === parity;
+
+    balance += win ? betAmount : -betAmount;
+    await userRef.set({ balance, lastClaim: userData.lastClaim ?? 0 }, { merge: true });
+
+    await message.reply(
+      `${message.author}, you ${win ? "won" : "lost"}! The ball landed on **${spin} (${color})**. New balance: **${balance}**.`
+    );
+    if (reactEmoji) await message.reactions.removeAll();
+    return;
+  }
+
+  // --- !g leaderboard ---
+  if (command === "leaderboard") {
+    try {
+      const snapshot = await db.collection("users").orderBy("balance", "desc").get();
+      if (snapshot.empty) {
+        await message.reply({ content: "No users found in the leaderboard.", allowedMentions: { parse: [] } });
+        if (reactEmoji) await message.reactions.removeAll();
+        return;
       }
 
-      balance += 100;
-      await userRef.set({ balance, lastClaim: now }, { merge: true });
-      return await message.reply(`${message.author}, you claimed **$100**! New balance: **${balance}**.`);
-    }
+      const allUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const top5 = allUsers.slice(0, 5);
 
-    // --- !g roulette ---
-    if (command === "roulette") {
-      const betType = args[2];
-      const betAmount = parseInt(args[3]);
-      if (!betType || isNaN(betAmount))
-        return await message.reply(`${message.author}, usage: \`!g roulette <red|black|odd|even> <amount>\``);
-      if (betAmount <= 0 || betAmount > balance)
-        return await message.reply(`${message.author}, invalid bet amount.`);
+      const lines = await Promise.all(top5.map(async (u, i) => {
+        const user = await client.users.fetch(u.id).catch(() => null);
+        const username = user?.username || "Unknown User";
+        return `${i + 1}. ${username} - ${u.balance}`;
+      }));
 
-      const outcomes = ["red", "black", "odd", "even"];
-      if (!outcomes.includes(betType))
-        return await message.reply(`${message.author}, valid bets: red, black, odd, even.`);
-
-      const spin = Math.floor(Math.random() * 36) + 1;
-      const color = spin === 0 ? "green" : spin % 2 === 0 ? "black" : "red";
-      const parity = spin % 2 === 0 ? "even" : "odd";
-      const win = betType === color || betType === parity;
-
-      balance += win ? betAmount : -betAmount;
-
-      await userRef.set({ balance, lastClaim: userData.lastClaim ?? 0 }, { merge: true });
-      return await message.reply(
-        `${message.author}, you ${win ? "won" : "lost"}! The ball landed on **${spin} (${color})**. New balance: **${balance}**.`
-      );
-    }
-
-    // --- !g leaderboard ---
-    if (command === "leaderboard") {
-      try {
-        const snapshot = await db.collection("users").orderBy("balance", "desc").get();
-        if (snapshot.empty) {
-          return await message.reply({
-            content: "No users found in the leaderboard.",
-            allowedMentions: { parse: [] },
-          });
-        }
-
-        const allUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        const top5 = allUsers.slice(0, 5);
-
-        const lines = await Promise.all(
-          top5.map(async (u, i) => {
-            const user = await client.users.fetch(u.id).catch(() => null);
-            const username = user?.username || "Unknown User";
-            return `${i + 1}. ${username} - ${u.balance}`;
-          })
-        );
-
-        const userIndex = allUsers.findIndex(u => u.id === message.author.id);
-        if (userIndex >= 5) {
-          const userBalance = allUsers[userIndex]?.balance ?? 0;
-          lines.push(`\nYour Rank: ${userIndex + 1} - ${userBalance}`);
-        }
-
-        return await message.reply({
-          content: `**Top 5 Richest Players:**\n${lines.join("\n")}`,
-          allowedMentions: { parse: [] },
-        });
-      } catch (err) {
-        console.error("Leaderboard error:", err);
-        return await message.reply("Something went wrong fetching the leaderboard.");
+      const userIndex = allUsers.findIndex(u => u.id === message.author.id);
+      if (userIndex >= 5) {
+        const userBalance = allUsers[userIndex]?.balance ?? 0;
+        lines.push(`\nYour Rank: ${userIndex + 1} - ${userBalance}`);
       }
+
+      await message.reply({ content: `**Top 5 Richest Players:**\n${lines.join("\n")}`, allowedMentions: { parse: [] } });
+      if (reactEmoji) await message.reactions.removeAll();
+      return;
+    } catch (err) {
+      console.error("Leaderboard error:", err);
+      await message.reply("Something went wrong fetching the leaderboard.");
+      if (reactEmoji) await message.reactions.removeAll();
+      return;
     }
-  } finally {
-    // Remove all reactions after command finishes
-    await message.reactions.removeAll().catch(() => {});
   }
 });
 
