@@ -51,6 +51,12 @@ if (global.__botStarted) {
 }
 global.__botStarted = true;
 
+// --- Prevent Double Event Handlers ---
+if (client.listenerCount("messageCreate") > 0) {
+  client.removeAllListeners("messageCreate");
+  console.log("[DEBUG] Removed duplicate messageCreate listeners");
+}
+
 // --- Track Processed Messages (anti-duplicate handler) ---
 const processedMessages = new Set();
 
@@ -75,7 +81,7 @@ client.on("messageCreate", async (message) => {
     return;
   }
   processedMessages.add(message.id);
-  setTimeout(() => processedMessages.delete(message.id), 30000); // cleanup after 30s
+  setTimeout(() => processedMessages.delete(message.id), 30000);
 
   const args = message.content.trim().split(/\s+/);
   const command = args[1]?.toLowerCase();
@@ -86,7 +92,9 @@ client.on("messageCreate", async (message) => {
     try {
       await message.react(THINKING_EMOJI);
       reacted = true;
-    } catch {}
+    } catch (err) {
+      console.log("[DEBUG] Failed to react:", err.message);
+    }
   }
 
   try {
@@ -102,7 +110,7 @@ client.on("messageCreate", async (message) => {
     }
     const lastClaim = userData.lastClaim ?? 0;
 
-    console.log(`[DEBUG] Processing: ${message.author.username} → ${command}, balance ${balance}`);
+    console.log(`[DEBUG] ${message.author.username} command: ${command}, balance: ${balance}`);
 
     // ---------- HELP ----------
     if (command === "help") {
