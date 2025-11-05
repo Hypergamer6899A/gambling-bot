@@ -115,6 +115,41 @@ client.on("messageCreate", async (message) => {
       `${message.author}, you ${win ? "won" : "lost"}! The ball landed on **${spin} (${color})**. New balance: **${balance}**.`
     );
   }
+// --- !g leaderboard ---
+if (command === "leaderboard") {
+  try {
+    const snapshot = await db.collection("users").orderBy("balance", "desc").get();
+    if (snapshot.empty) {
+      return message.reply({
+        content: "No users found in the leaderboard.",
+        allowedMentions: { parse: [] },
+      });
+    }
+
+    const allUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const top5 = allUsers.slice(0, 5);
+
+    const lines = await Promise.all(top5.map(async (u, i) => {
+      const user = await client.users.fetch(u.id).catch(() => null);
+      const username = user?.username || "Unknown User";
+      return `${i + 1}. ${username} - ${u.balance}`;
+    }));
+
+    const userIndex = allUsers.findIndex(u => u.id === message.author.id);
+    if (userIndex >= 5) {
+      const userBalance = allUsers[userIndex]?.balance ?? 0;
+      lines.push(`\nYour Rank: ${userIndex + 1} - ${userBalance}`);
+    }
+
+    return message.reply({
+      content: `**Top 5 Richest Players:**\n${lines.join("\n")}`,
+      allowedMentions: { parse: [] },
+    });
+  } catch (err) {
+    console.error("Leaderboard error:", err);
+    return message.reply("Something went wrong fetching the leaderboard.");
+  }
+}
 
 
 // --- Dummy HTTP Server for Render ---
