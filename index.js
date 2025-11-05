@@ -150,7 +150,7 @@ if (command === "leaderboard") {
     return message.reply("Something went wrong fetching the leaderboard.");
   }
 }
-
+});
 
 // --- Dummy HTTP Server for Render ---
 const app = express();
