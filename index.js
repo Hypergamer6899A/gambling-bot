@@ -5,7 +5,7 @@ import {
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle
+  ButtonStyle,
 } from "discord.js";
 import express from "express";
 import "dotenv/config";
@@ -36,7 +36,11 @@ console.log("[DEBUG] Firestore initialized");
 
 // --- Discord Client Setup ---
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
   partials: [Partials.Channel],
 });
 
@@ -53,71 +57,73 @@ client.once("ready", () => {
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
   if (message.channel.id !== CHANNEL_ID) return;
-  if (!message.content.startsWith("!g ")) return; // Require a space to avoid !gX
+  if (!message.content.startsWith("!g")) return;
 
   const args = message.content.trim().split(/\s+/);
   const command = args[1]?.toLowerCase();
 
+  // React with thinking emoji if defined
   let reacted = false;
   if (THINKING_EMOJI) {
     try {
       await message.react(THINKING_EMOJI);
       reacted = true;
-    } catch (err) {
-      console.log("[DEBUG] Could not react:", err.message);
-    }
+    } catch {}
   }
 
   try {
     const userRef = db.collection("users").doc(message.author.id);
     let userDoc = await userRef.get();
     let userData = userDoc.exists ? userDoc.data() : {};
-    let balance = userData.balance ?? 1000;
+    let balance = userData.balance;
+    if (balance === undefined) {
+      balance = 1000;
+      await userRef.set({ balance, lastClaim: 0 }, { merge: true });
+      userDoc = await userRef.get();
+      userData = userDoc.data();
+    }
     const lastClaim = userData.lastClaim ?? 0;
 
-    console.log(`[DEBUG] Command: ${command}, User: ${message.author.username}, Balance: ${balance}`);
+    console.log(`[DEBUG] ${message.author.username} command: ${command}, balance: ${balance}`);
 
     // --- HELP ---
     if (command === "help") {
       await message.reply(
         "**Available Commands:**\n" +
-        "`!g help` - Show this help menu\n" +
-        "`!g balance` - Check your balance\n" +
-        "`!g roulette <red|black|odd|even> <amount>` - Bet on roulette\n" +
-        "`!g blackjack <amount>` - Play blackjack against the bot\n" +
-        "`!g claim` - Claim $100 if broke (24h cooldown)\n" +
-        "`!g leaderboard` - Show top 5 richest players"
+          "`!g help` - Show this help menu\n" +
+          "`!g balance` - Check your balance\n" +
+          "`!g roulette <red|black|odd|even> <amount>` - Bet on roulette\n" +
+          "`!g blackjack <amount>` - Play blackjack against the bot\n" +
+          "`!g claim` - Claim 100 coins when broke (every 24h)\n" +
+          "`!g leaderboard` - Show top 5 richest players (with your rank)"
       );
-      return;
     }
 
     // --- BALANCE ---
-    if (command === "balance") {
+    else if (command === "balance") {
       await message.reply(`${message.author}, your balance is **${balance}**.`);
-      return;
     }
 
     // --- CLAIM ---
-    if (command === "claim") {
+    else if (command === "claim") {
       if (balance > 0) {
-        await message.reply(`${message.author}, you still have money. Claim only when broke.`);
-        return;
+        await message.reply(`${message.author}, you still have money. You can only claim when broke.`);
+      } else {
+        const now = Date.now();
+        const dayMs = 24 * 60 * 60 * 1000;
+        if (now - lastClaim < dayMs) {
+          const hoursLeft = Math.ceil((dayMs - (now - lastClaim)) / (1000 * 60 * 60));
+          await message.reply(`${message.author}, you can claim again in **${hoursLeft} hour(s)**.`);
+        } else {
+          balance += 100;
+          await userRef.set({ balance, lastClaim: now }, { merge: true });
+          await message.reply(`${message.author}, you claimed **$100**! New balance: **${balance}**.`);
+        }
       }
-      const now = Date.now();
-      const day = 24 * 60 * 60 * 1000;
-      if (now - lastClaim < day) {
-        const hoursLeft = Math.ceil((day - (now - lastClaim)) / (1000 * 60 * 60));
-        await message.reply(`${message.author}, claim again in **${hoursLeft} hour(s)**.`);
-        return;
-      }
-      balance += 100;
-      await userRef.set({ balance, lastClaim: now }, { merge: true });
-      await message.reply(`${message.author}, claimed **$100**! New balance: **${balance}**.`);
-      return;
     }
 
     // --- ROULETTE ---
-    if (command === "roulette") {
+    else if (command === "roulette") {
       const betType = args[2]?.toLowerCase();
       const betAmount = parseInt(args[3]);
       if (!betType || isNaN(betAmount)) {
@@ -142,37 +148,47 @@ client.on("messageCreate", async (message) => {
 
       if (win) balance += betAmount;
       else balance -= betAmount;
-      await userRef.set({ balance }, { merge: true });
 
-      await message.reply(`${message.author}, you ${win ? "won" : "lost"}! Ball landed on **${spin} (${color})**. New balance: **${balance}**.`);
-      return;
+      await userRef.set({ balance, lastClaim }, { merge: true });
+      await message.reply(
+        `${message.author}, you ${win ? "won" : "lost"}! The ball landed on **${spin} (${color})**. New balance: **${balance}**.`
+      );
     }
 
     // --- LEADERBOARD ---
-    if (command === "leaderboard") {
-      const snapshot = await db.collection("users").orderBy("balance", "desc").get();
-      const all = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      if (all.length === 0) {
-        await message.reply("No users in leaderboard.");
-        return;
+    else if (command === "leaderboard") {
+      try {
+        const snapshot = await db.collection("users").orderBy("balance", "desc").get();
+        if (snapshot.empty) {
+          await message.reply("No users found in the leaderboard.");
+          return;
+        }
+
+        const allUsers = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        const top5 = allUsers.slice(0, 5);
+        const lines = await Promise.all(
+          top5.map(async (u, i) => {
+            const user = await client.users.fetch(u.id).catch(() => null);
+            const username = user?.username || "Unknown User";
+            return `${i + 1}. ${username} - ${u.balance}`;
+          })
+        );
+
+        const userIndex = allUsers.findIndex((u) => u.id === message.author.id);
+        if (userIndex >= 5) {
+          const userBalance = allUsers[userIndex]?.balance ?? 0;
+          lines.push(`\nYour Rank: ${userIndex + 1} - ${userBalance}`);
+        }
+
+        await message.reply(`**Top 5 Richest Players:**\n${lines.join("\n")}`);
+      } catch (err) {
+        console.error("Leaderboard error:", err);
+        await message.reply("Something went wrong fetching the leaderboard.");
       }
-
-      const top5 = all.slice(0, 5);
-      const lines = await Promise.all(top5.map(async (u, i) => {
-        const user = await client.users.fetch(u.id).catch(() => null);
-        const name = user?.username || "Unknown";
-        return `${i + 1}. ${name} - ${u.balance}`;
-      }));
-
-      const rank = all.findIndex(u => u.id === message.author.id);
-      if (rank >= 5) lines.push(`\nYour Rank: ${rank + 1} - ${all[rank].balance}`);
-
-      await message.reply(`**Top 5 Richest Players:**\n${lines.join("\n")}`);
-      return;
     }
 
     // --- BLACKJACK ---
-    if (command === "blackjack") {
+    else if (command === "blackjack") {
       const betAmount = parseInt(args[2]);
       if (isNaN(betAmount) || betAmount <= 0 || betAmount > balance) {
         await message.reply(`${message.author}, invalid bet amount.`);
@@ -185,92 +201,118 @@ client.on("messageCreate", async (message) => {
       const suits = ["♠", "♥", "♦", "♣"];
       const values = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
       const deck = [];
-      suits.forEach(s => values.forEach(v => deck.push(`${v}${s}`)));
+      suits.forEach((s) => values.forEach((v) => deck.push(`${v}${s}`)));
       deck.sort(() => Math.random() - 0.5);
 
-      const draw = () => deck.pop();
-      const handValue = (hand) => {
-        let total = 0, aces = 0;
+      const drawCard = () => deck.pop();
+      const calculateHand = (hand) => {
+        let sum = 0;
+        let aces = 0;
         for (const card of hand) {
-          const val = card.slice(0, -1);
-          if (["J", "Q", "K"].includes(val)) total += 10;
-          else if (val === "A") { total += 11; aces++; }
-          else total += parseInt(val);
+          let value = card.slice(0, -1);
+          if (["J", "Q", "K"].includes(value)) sum += 10;
+          else if (value === "A") {
+            sum += 11;
+            aces++;
+          } else sum += parseInt(value);
         }
-        while (total > 21 && aces > 0) { total -= 10; aces--; }
-        return total;
+        while (sum > 21 && aces > 0) {
+          sum -= 10;
+          aces--;
+        }
+        return sum;
       };
 
-      const player = [draw(), draw()];
-      const dealer = [draw(), draw()];
+      const playerHand = [drawCard(), drawCard()];
+      const dealerHand = [drawCard(), drawCard()];
 
       const embed = new EmbedBuilder()
         .setTitle("Blackjack")
-        .setDescription(`Your hand: ${player.join(" ")}\nDealer shows: ${dealer[0]}\n\nHit or Stand?`)
-        .setColor("Blurple");
+        .setColor(0x808080) // neutral gray mid-game
+        .setDescription(`Your hand: ${playerHand.join(" ")}\nDealer shows: ${dealerHand[0]}\n\nChoose Hit or Stand`);
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId("hit").setLabel("Hit").setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId("stand").setLabel("Stand").setStyle(ButtonStyle.Secondary)
       );
 
-      const msg = await message.reply({ embeds: [embed], components: [row] });
-      const collector = msg.createMessageComponentCollector({
-        filter: i => i.user.id === message.author.id,
-        time: 60000,
-      });
+      const gameMessage = await message.reply({ embeds: [embed], components: [row] });
 
-      collector.on("collect", async i => {
+      const filter = (i) => i.user.id === message.author.id;
+      const collector = gameMessage.createMessageComponentCollector({ filter, time: 60000 });
+
+      collector.on("collect", async (i) => {
         if (i.customId === "hit") {
-          player.push(draw());
-          const val = handValue(player);
-          if (val > 21) {
-            await i.update({ embeds: [embed.setDescription(`Your hand: ${player.join(" ")}\nYou busted!`)], components: [] });
-            await message.reply(`${message.author}, you busted and lost **${betAmount}**!`);
-            collector.stop();
+          playerHand.push(drawCard());
+          const sum = calculateHand(playerHand);
+          if (sum > 21) {
+            embed
+              .setColor(0xed4245) // red = bust
+              .setDescription(`Your hand: ${playerHand.join(" ")}\nYou busted!`);
+            await i.update({ embeds: [embed], components: [] });
+            collector.stop("bust");
+            await message.reply(`${message.author}, you busted! Lost **${betAmount}**.`);
           } else {
-            await i.update({ embeds: [embed.setDescription(`Your hand: ${player.join(" ")}\nDealer shows: ${dealer[0]}`)], components: [row] });
+            embed
+              .setColor(0x808080)
+              .setDescription(`Your hand: ${playerHand.join(" ")}\nDealer shows: ${dealerHand[0]}`);
+            await i.update({ embeds: [embed], components: [row] });
           }
         } else if (i.customId === "stand") {
-          let dealerVal = handValue(dealer);
-          while (dealerVal < 17) { dealer.push(draw()); dealerVal = handValue(dealer); }
-          const playerVal = handValue(player);
-          let result;
+          let dealerSum = calculateHand(dealerHand);
+          while (dealerSum < 17) {
+            dealerHand.push(drawCard());
+            dealerSum = calculateHand(dealerHand);
+          }
 
-          if (dealerVal > 21 || playerVal > dealerVal) {
+          const playerSum = calculateHand(playerHand);
+          let resultMsg;
+          let color;
+
+          if (dealerSum > 21 || playerSum > dealerSum) {
             balance += betAmount * 2;
-            result = `You won! Dealer had ${dealer.join(" ")}. Won **${betAmount}** coins.`;
-          } else if (playerVal === dealerVal) {
-            balance += betAmount;
-            result = `It's a tie! Dealer had ${dealer.join(" ")}. Bet returned.`;
+            resultMsg = `You won! Dealer had ${dealerHand.join(" ")}. Won **${betAmount}**.`;
+            color = 0x57f287; // green
+          } else if (playerSum < dealerSum) {
+            resultMsg = `You lost! Dealer had ${dealerHand.join(" ")}. Lost **${betAmount}**.`;
+            color = 0xed4245; // red
           } else {
-            result = `You lost! Dealer had ${dealer.join(" ")}. Lost **${betAmount}** coins.`;
+            balance += betAmount; // tie
+            resultMsg = `It's a tie! Dealer had ${dealerHand.join(" ")}. Your bet is returned.`;
+            color = 0xfee75c; // yellow
           }
 
           await userRef.set({ balance }, { merge: true });
-          await i.update({ embeds: [embed.setDescription(`Your hand: ${player.join(" ")}\nDealer: ${dealer.join(" ")}\n\n${result}`)], components: [] });
+          embed
+            .setColor(color)
+            .setDescription(
+              `Your hand: ${playerHand.join(" ")}\nDealer: ${dealerHand.join(" ")}\n\n${resultMsg}`
+            );
+          await i.update({ embeds: [embed], components: [] });
           collector.stop();
         }
       });
 
       collector.on("end", (_, reason) => {
-        if (reason === "time") message.reply(`${message.author}, blackjack timed out.`);
+        if (reason === "time") {
+          message.reply(`${message.author}, blackjack timed out.`);
+        }
       });
-      return;
     }
-
   } finally {
     if (reacted) {
-      try { await message.reactions.removeAll(); } catch {}
+      try {
+        await message.reactions.removeAll();
+      } catch {}
     }
   }
 });
 
 // --- Express Server ---
 const app = express();
-app.get("/", (_, res) => res.send("Bot is running."));
-const port = PORT || 3000;
-app.listen(port, () => console.log(`[DEBUG] Listening on port ${port}`));
+app.get("/", (req, res) => res.send("Bot is running."));
+const serverPort = PORT || 3000;
+app.listen(serverPort, () => console.log(`[DEBUG] Listening on port ${serverPort}`));
 
 // --- Login ---
 client.login(TOKEN);
