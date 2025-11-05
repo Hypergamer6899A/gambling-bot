@@ -94,14 +94,14 @@ client.on("messageCreate", async (message) => {
           "`!g balance` - Check your balance\n" +
           "`!g roulette <red|black|odd|even> <amount>` - Bet on roulette\n" +
           "`!g blackjack <amount>` - Play blackjack against the bot\n" +
-          "`!g claim` - Claim 100 coins when broke (every 24h)\n" +
+          "`!g claim` - Claim $100 when broke (every 24h)\n" +
           "`!g leaderboard` - Show top 5 richest players (with your rank)"
       );
     }
 
     // --- BALANCE ---
     else if (command === "balance") {
-      await message.reply(`${message.author}, your balance is **${balance}**.`);
+      await message.reply(`${message.author}, your balance is **$${balance}**.`);
     }
 
     // --- CLAIM ---
@@ -117,7 +117,7 @@ client.on("messageCreate", async (message) => {
         } else {
           balance += 100;
           await userRef.set({ balance, lastClaim: now }, { merge: true });
-          await message.reply(`${message.author}, you claimed **$100**! New balance: **${balance}**.`);
+          await message.reply(`${message.author}, you claimed **$100**! New balance: **$${balance}**.`);
         }
       }
     }
@@ -151,7 +151,7 @@ client.on("messageCreate", async (message) => {
 
       await userRef.set({ balance, lastClaim }, { merge: true });
       await message.reply(
-        `${message.author}, you ${win ? "won" : "lost"}! The ball landed on **${spin} (${color})**. New balance: **${balance}**.`
+        `${message.author}, you ${win ? "won" : "lost"}! The ball landed on **${spin} (${color})**. New balance: **$${balance}**.`
       );
     }
 
@@ -170,14 +170,14 @@ client.on("messageCreate", async (message) => {
           top5.map(async (u, i) => {
             const user = await client.users.fetch(u.id).catch(() => null);
             const username = user?.username || "Unknown User";
-            return `${i + 1}. ${username} - ${u.balance}`;
+            return `${i + 1}. ${username} - $${u.balance}`;
           })
         );
 
         const userIndex = allUsers.findIndex((u) => u.id === message.author.id);
         if (userIndex >= 5) {
           const userBalance = allUsers[userIndex]?.balance ?? 0;
-          lines.push(`\nYour Rank: ${userIndex + 1} - ${userBalance}`);
+          lines.push(`\nYour Rank: ${userIndex + 1} - $${userBalance}`);
         }
 
         await message.reply(`**Top 5 Richest Players:**\n${lines.join("\n")}`);
@@ -228,7 +228,7 @@ client.on("messageCreate", async (message) => {
 
       const embed = new EmbedBuilder()
         .setTitle("Blackjack")
-        .setColor(0x808080) // neutral gray mid-game
+        .setColor(0x808080)
         .setDescription(`Your hand: ${playerHand.join(" ")}\nDealer shows: ${dealerHand[0]}\n\nChoose Hit or Stand`);
 
       const row = new ActionRowBuilder().addComponents(
@@ -247,11 +247,11 @@ client.on("messageCreate", async (message) => {
           const sum = calculateHand(playerHand);
           if (sum > 21) {
             embed
-              .setColor(0xed4245) // red = bust
+              .setColor(0xed4245)
               .setDescription(`Your hand: ${playerHand.join(" ")}\nYou busted!`);
             await i.update({ embeds: [embed], components: [] });
             collector.stop("bust");
-            await message.reply(`${message.author}, you busted! Lost $**${betAmount}**.`);
+            await message.reply(`${message.author}, you busted! Lost **$${betAmount}**.`);
           } else {
             embed
               .setColor(0x808080)
@@ -271,22 +271,24 @@ client.on("messageCreate", async (message) => {
 
           if (dealerSum > 21 || playerSum > dealerSum) {
             balance += betAmount * 2;
-            resultMsg = `You won! Dealer had ${dealerHand.join(" ")}. Won $**${betAmount}**.`;
-            color = 0x57f287; // green
+            resultMsg = `You won! Dealer had ${dealerHand.join(" ")}. Won **$${betAmount}**.`;
+            color = 0x57f287;
           } else if (playerSum < dealerSum) {
-            resultMsg = `You lost! Dealer had ${dealerHand.join(" ")}. Lost $**${betAmount}**.`;
-            color = 0xed4245; // red
+            resultMsg = `You lost! Dealer had ${dealerHand.join(" ")}. Lost **$${betAmount}**.`;
+            color = 0xed4245;
           } else {
-            balance += betAmount; // tie
+            balance += betAmount;
             resultMsg = `It's a tie! Dealer had ${dealerHand.join(" ")}. Your bet is returned.`;
-            color = 0xfee75c; // yellow
+            color = 0xfee75c;
           }
 
           await userRef.set({ balance }, { merge: true });
           embed
             .setColor(color)
             .setDescription(
-              `Your hand: ${playerHand.join(" ")}\nDealer: ${dealerHand.join(" ")}\n\n${resultMsg}`
+              `Your hand: ${playerHand.join(" ")}\nDealer: ${dealerHand.join(
+                " "
+              )}\n\n${resultMsg}\n\n💰 **Current Balance:** $${balance}`
             );
           await i.update({ embeds: [embed], components: [] });
           collector.stop();
