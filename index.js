@@ -1,133 +1,90 @@
-import { Client, GatewayIntentBits, Collection, REST, Routes, SlashCommandBuilder } from "discord.js";
+import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from "discord.js";
+import { initializeApp, cert } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
 import dotenv from "dotenv";
-import express from "express";
-import admin from "firebase-admin";
-
 dotenv.config();
 
-// ----- Firebase -----
-admin.initializeApp({
-  credential: admin.credential.cert({
-    projectId: process.env.FIREBASE_PROJECT_ID,
-    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+// Env vars
+const {
+  TOKEN,
+  CLIENT_ID,
+  GUILD_ID,
+  CHANNEL_ID,
+  FIREBASE_CLIENT_EMAIL,
+  FIREBASE_PRIVATE_KEY,
+  FIREBASE_PROJECT_ID,
+} = process.env;
+
+// Firebase init
+initializeApp({
+  credential: cert({
+    projectId: FIREBASE_PROJECT_ID,
+    clientEmail: FIREBASE_CLIENT_EMAIL,
+    privateKey: FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
   }),
 });
-const db = admin.firestore();
+const db = getFirestore();
 
-// ----- Discord -----
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-client.commands = new Collection();
+// Discord client
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+});
 
-// ----- Commands -----
-const COMMANDS = [
-  new SlashCommandBuilder().setName("balance").setDescription("Check your balance"),
+// Slash command: /help
+const commands = [
   new SlashCommandBuilder()
-    .setName("roulette")
-    .setDescription("Spin the roulette wheel")
-    .addStringOption(opt =>
-      opt.setName("bet")
-        .setDescription("red, black, or green")
-        .setRequired(true)
-    )
-    .addIntegerOption(opt =>
-      opt.setName("amount")
-        .setDescription("Bet amount")
-        .setRequired(true)
-    )
+    .setName("help")
+    .setDescription("Show available commands")
+    .toJSON(),
 ];
 
-// ----- Deploy commands -----
-const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
+// Deploy slash commands
+const rest = new REST({ version: "10" }).setToken(TOKEN);
 (async () => {
   try {
-    console.log("Registering commands...");
-    await rest.put(
-      Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
-      { body: COMMANDS.map(cmd => cmd.toJSON()) }
-    );
-    console.log("Commands registered.");
-  } catch (err) {
-    console.error("Failed to register commands:", err);
+    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
+    console.log("Slash commands registered");
+  } catch (e) {
+    console.error("Command registration failed:", e);
   }
 })();
 
-// ----- Command Handlers -----
-async function handleBalance(interaction) {
-  const userId = interaction.user.id;
-  const ref = db.collection("users").doc(userId);
-
-  const doc = await ref.get();
-  let balance = doc.exists ? doc.data().balance : 1000;
-
-  if (!doc.exists) await ref.set({ balance, username: interaction.user.username });
-
-  await interaction.editReply(`<@${userId}>, your balance is $${balance.toLocaleString()}.`);
-}
-
-async function handleRoulette(interaction) {
-  const userId = interaction.user.id;
-  const ref = db.collection("users").doc(userId);
-
-  const bet = interaction.options.getString("bet").toLowerCase();
-  const amount = interaction.options.getInteger("amount");
-
-  if (!["red", "black", "green"].includes(bet)) {
-    return interaction.editReply("Invalid bet. Choose red, black, or green.");
-  }
-  if (amount <= 0) {
-    return interaction.editReply("Bet must be greater than 0.");
-  }
-
-  const doc = await ref.get();
-  let balance = doc.exists ? doc.data().balance : 1000;
-
-  if (balance < amount) return interaction.editReply("Not enough money.");
-
-  // Deduct bet
-  balance -= amount;
-
-  const number = Math.floor(Math.random() * 37); // 0-36
-  const color = number === 0 ? "green" : (number % 2 === 0 ? "black" : "red");
-
-  let winnings = 0;
-  if (bet === color) winnings = color === "green" ? amount * 10 : amount * 2;
-
-  balance += winnings;
-
-  await ref.set({ balance, username: interaction.user.username });
-
-  const outcome = winnings > 0 ? `You won $${winnings}!` : `You lost $${amount}.`;
-  await interaction.editReply(`Roulette result: ${color} ${number}\n${outcome} Balance: $${balance}`);
-}
-
-// ----- Interaction Handler -----
+// Handle slash commands
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isCommand()) return;
-
-  try {
-    await interaction.deferReply({ ephemeral: true });
-
-    switch (interaction.commandName) {
-      case "balance":
-        await handleBalance(interaction);
-        break;
-      case "roulette":
-        await handleRoulette(interaction);
-        break;
-      default:
-        await interaction.editReply("Unknown command.");
-    }
-  } catch (err) {
-    console.error("Command error:", err);
-    try { await interaction.editReply("Error processing command."); } catch {}
+  if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName === "help") {
+    await interaction.reply({
+      content: "Commands:\n- `/help`: show this menu\n- `!g`: gamble in the designated channel",
+      ephemeral: true,
+    });
   }
 });
 
-// ----- Keepalive -----
-const app = express();
-app.get("/", (_, res) => res.send("Bot is running."));
-app.listen(process.env.PORT || 3000, () => console.log("Listening on port", process.env.PORT));
+// Handle gambling text commands
+client.on("messageCreate", async (msg) => {
+  if (msg.channel.id !== CHANNEL_ID) return;
+  if (!msg.content.startsWith("!g")) return;
 
-// ----- Login -----
-client.login(process.env.TOKEN);
+  const args = msg.content.split(" ");
+  const cmd = args[1];
+
+  const userRef = db.collection("users").doc(msg.author.id);
+  const userSnap = await userRef.get();
+  let balance = userSnap.exists ? userSnap.data().balance : 1000;
+
+  // Basic gamble logic
+  if (cmd === "bet") {
+    const amount = parseInt(args[2]);
+    if (isNaN(amount) || amount <= 0) return msg.reply("Enter a valid amount.");
+    if (amount > balance) return msg.reply("You don't have enough coins.");
+
+    const win = Math.random() < 0.5;
+    balance += win ? amount : -amount;
+    await userRef.set({ balance }, { merge: true });
+    msg.reply(`${win ? "You won" : "You lost"}! New balance: ${balance}`);
+  } else {
+    msg.reply("Usage: `!g bet <amount>`");
+  }
+});
+
+client.login(TOKEN);
