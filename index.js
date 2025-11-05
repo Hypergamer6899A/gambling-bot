@@ -110,7 +110,7 @@ client.on("messageCreate", async (message) => {
     if (win) balance += betAmount;
     else balance -= betAmount;
 
-    await userRef.set({ balance, lastClaim: userData.lastClaim }, { merge: true });
+   await userRef.set({ balance, lastClaim: userData.lastClaim ?? 0 }, { merge: true });
     return message.reply(
       `${message.author}, you ${win ? "won" : "lost"}! The ball landed on **${spin} (${color})**. New balance: **${balance}**.`
     );
