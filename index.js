@@ -125,29 +125,30 @@ client.on("messageCreate", async (message) => {
     await userRef.set({ balance, lastClaim: userData.lastClaim }, { merge: true });
   }
 
-  // --- !g leaderboard ---
-  if (command === "leaderboard") {
-    const snapshot = await db.collection("users").orderBy("balance", "desc").get();
-    if (snapshot.empty) return message.reply("No users found in the leaderboard.");
-
-    const allUsers = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    const top5 = allUsers.slice(0, 5);
-
-    let leaderboard = "**Top 5 Richest Players:**\n";
-    for (let i = 0; i < top5.length; i++) {
-      const user = await client.users.fetch(top5[i].id).catch(() => null);
-      const username = user ? user.username : "Unknown User";
-      leaderboard += `${i + 1}. ${username} - **${top5[i].balance}**\n`;
-    }
-
-    const userIndex = allUsers.findIndex((u) => u.id === message.author.id);
-    if (userIndex >= 5) {
-      leaderboard += `\nYour Rank: **${userIndex + 1}** - ${balance}`;
-    }
-
-    return message.reply(leaderboard);
+// --- !g leaderboard ---
+if (command === "leaderboard") {
+  const snapshot = await db.collection("users").orderBy("balance", "desc").get();
+  if (snapshot.empty) {
+    return message.reply({ content: "No users found in the leaderboard.", allowedMentions: { repliedUser: false } });
   }
-});
+
+  const allUsers = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  const top5 = allUsers.slice(0, 5);
+
+  let leaderboard = "**Top 5 Richest Players:**\n";
+  for (let i = 0; i < top5.length; i++) {
+    const user = await client.users.fetch(top5[i].id).catch(() => null);
+    const username = user ? user.username : "Unknown User";
+    leaderboard += `${i + 1}. ${username} - **${top5[i].balance}**\n`;
+  }
+
+  const userIndex = allUsers.findIndex((u) => u.id === message.author.id);
+  if (userIndex >= 5) {
+    leaderboard += `\nYour Rank: **${userIndex + 1}** - ${balance}`;
+  }
+
+  return message.reply({ content: leaderboard, allowedMentions: { repliedUser: false } });
+}
 
 // --- Dummy HTTP Server for Render ---
 const app = express();
