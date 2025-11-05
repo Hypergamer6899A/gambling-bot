@@ -129,29 +129,34 @@ client.on("messageCreate", async (message) => {
 if (command === "leaderboard") {
   const snapshot = await db.collection("users").orderBy("balance", "desc").get();
   if (snapshot.empty) {
-    return message.reply({ content: "No users found in the leaderboard.", allowedMentions: { repliedUser: false } });
+    return message.reply({
+      content: "No users found in the leaderboard.",
+      allowedMentions: { repliedUser: false },
+    });
   }
 
   const allUsers = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
   const top5 = allUsers.slice(0, 5);
 
-  const usernames = [];
+  const lines = [];
   for (let i = 0; i < top5.length; i++) {
     const user = await client.users.fetch(top5[i].id).catch(() => null);
-    const username = user ? user.username : "Unknown User";
-    usernames.push(`${i + 1}. ${username} - ${top5[i].balance}`);
+    const username = user?.username || "Unknown User";
+    lines.push(`${i + 1}. ${username} - ${top5[i].balance}`);
   }
 
   const userIndex = allUsers.findIndex((u) => u.id === message.author.id);
-  let extraLine = "";
   if (userIndex >= 5) {
     const userBalance = allUsers[userIndex]?.balance ?? 0;
-    extraLine = `\nYour Rank: ${userIndex + 1} - ${userBalance}`;
+    lines.push(`\nYour Rank: ${userIndex + 1} - ${userBalance}`);
   }
 
-  const leaderboard = `**Top 5 Richest Players:**\n${usernames.join("\n")}${extraLine}`;
-  return message.reply({ content: leaderboard, allowedMentions: { repliedUser: false } });
+  return message.reply({
+    content: `**Top 5 Richest Players:**\n${lines.join("\n")}`,
+    allowedMentions: { parse: [] },
+  });
 }
+
 
 // --- Dummy HTTP Server for Render ---
 const app = express();
