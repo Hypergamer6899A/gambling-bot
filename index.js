@@ -185,115 +185,102 @@ async function handleCommand(command, args, message, db, client) {
       return message.reply(`**Top 5 Richest Players:**\n${lines.join("\n")}`);
     }
 
-    case "blackjack": {
-      const betAmount = parseInt(args[2]);
-      if (isNaN(betAmount) || betAmount <= 0 || betAmount > balance)
-        return message.reply(`${message.author}, invalid bet amount.`);
+case "blackjack": {
+  const betAmount = parseInt(args[2]);
+  if (isNaN(betAmount) || betAmount <= 0 || betAmount > balance)
+    return message.reply(`${message.author}, invalid bet amount.`);
 
-      balance -= betAmount;
+  const suits = ["♠", "♥", "♦", "♣"];
+  const values = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+  const deck = suits.flatMap((s) => values.map((v) => `${v}${s}`)).sort(() => Math.random() - 0.5);
+  const draw = () => deck.pop();
+
+  const calc = (hand) => {
+    let sum = 0, aces = 0;
+    for (const c of hand) {
+      const v = c.slice(0, -1);
+      if (["J", "Q", "K"].includes(v)) sum += 10;
+      else if (v === "A") { sum += 11; aces++; }
+      else sum += parseInt(v);
+    }
+    while (sum > 21 && aces--) sum -= 10;
+    return sum;
+  };
+
+  const player = [draw(), draw()];
+  const dealer = [draw(), draw()];
+  const embed = new EmbedBuilder()
+    .setTitle("Blackjack")
+    .setColor(0x808080)
+    .setDescription(`Your hand: ${player.join(" ")}\nDealer shows: ${dealer[0]}\n\nHit or Stand?`);
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("hit").setLabel("Hit").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId("stand").setLabel("Stand").setStyle(ButtonStyle.Secondary)
+  );
+
+  const msg = await message.reply({ embeds: [embed], components: [row] });
+  const filter = (i) => i.user.id === message.author.id;
+  const collector = msg.createMessageComponentCollector({ filter, time: 60000 });
+
+  collector.on("collect", async (i) => {
+    if (i.customId === "hit") {
+      player.push(draw());
+      const sum = calc(player);
+
+      if (sum > 21) {
+        // Bust: deduct bet once
+        balance -= betAmount;
+        await userRef.set({ balance }, { merge: true });
+
+        embed
+          .setColor(0xed4245)
+          .setDescription(`Your hand: ${player.join(" ")}\nYou busted!\n\n**Lost $${betAmount}. New balance: $${balance}**`);
+        await i.update({ embeds: [embed], components: [] });
+        collector.stop();
+        return;
+      }
+
+      embed.setDescription(`Your hand: ${player.join(" ")}\nDealer shows: ${dealer[0]}`);
+      await i.update({ embeds: [embed], components: [row] });
+    } else { // stand
+      let dSum = calc(dealer);
+      while (dSum < 17) {
+        dealer.push(draw());
+        dSum = calc(dealer);
+      }
+      const pSum = calc(player);
+      let result, color;
+
+      if (dSum > 21 || pSum > dSum) {
+        balance += betAmount * 2;
+        result = `You won! Dealer had ${dealer.join(" ")}.`;
+        color = 0x57f287;
+      } else if (pSum < dSum) {
+        balance -= betAmount;
+        result = `You lost! Dealer had ${dealer.join(" ")}.`;
+        color = 0xed4245;
+      } else {
+        balance += betAmount;
+        result = `It's a tie! Dealer had ${dealer.join(" ")}.`;
+        color = 0xfee75c;
+      }
+
       await userRef.set({ balance }, { merge: true });
-
-      const suits = ["♠", "♥", "♦", "♣"];
-      const values = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
-      const deck = suits.flatMap((s) => values.map((v) => `${v}${s}`)).sort(() => Math.random() - 0.5);
-      const draw = () => deck.pop();
-
-      const calc = (hand) => {
-        let sum = 0,
-          aces = 0;
-        for (const c of hand) {
-          const v = c.slice(0, -1);
-          if (["J", "Q", "K"].includes(v)) sum += 10;
-          else if (v === "A") {
-            sum += 11;
-            aces++;
-          } else sum += parseInt(v);
-        }
-        while (sum > 21 && aces--) sum -= 10;
-        return sum;
-      };
-
-      const player = [draw(), draw()];
-      const dealer = [draw(), draw()];
-      const embed = new EmbedBuilder()
-        .setTitle("Blackjack")
-        .setColor(0x808080)
-        .setDescription(`Your hand: ${player.join(" ")}\nDealer shows: ${dealer[0]}\n\nHit or Stand?`);
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("hit").setLabel("Hit").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId("stand").setLabel("Stand").setStyle(ButtonStyle.Secondary)
+      embed.setColor(color).setDescription(
+        `Your hand: ${player.join(" ")}\nDealer: ${dealer.join(" ")}\n\n${result}\n**Balance:** $${balance}`
       );
-
-      const msg = await message.reply({ embeds: [embed], components: [row] });
-      const filter = (i) => i.user.id === message.author.id;
-      const collector = msg.createMessageComponentCollector({ filter, time: 60000 });
-
-      collector.on("collect", async (i) => {
-  if (i.customId === "hit") {
-    player.push(draw());
-    const sum = calc(player);
-
-    if (sum > 21) {
-      // Bust: deduct bet now
-      balance -= betAmount;
-      await userRef.set({ balance }, { merge: true });
-
-      embed
-        .setColor(0xed4245)
-        .setDescription(
-          `Your hand: ${player.join(" ")}\nYou busted!\n\n**Lost $${betAmount}. New balance: $${balance}**`
-        );
-
       await i.update({ embeds: [embed], components: [] });
       collector.stop();
-      return;
     }
+  });
 
-    embed.setDescription(`Your hand: ${player.join(" ")}\nDealer shows: ${dealer[0]}`);
-    await i.update({ embeds: [embed], components: [row] });
-  } else { // stand
-    let dSum = calc(dealer);
-    while (dSum < 17) {
-      dealer.push(draw());
-      dSum = calc(dealer);
-    }
-    const pSum = calc(player);
-    let result, color;
-
-    if (dSum > 21 || pSum > dSum) {
-      // Player wins
-      balance += betAmount * 2;
-      result = `You won! Dealer had ${dealer.join(" ")}.`;
-      color = 0x57f287;
-    } else if (pSum < dSum) {
-      // Player loses
-      balance -= betAmount;
-      result = `You lost! Dealer had ${dealer.join(" ")}.`;
-      color = 0xed4245;
-    } else {
-      // Tie
-      balance += betAmount;
-      result = `It's a tie! Dealer had ${dealer.join(" ")}.`;
-      color = 0xfee75c;
-    }
-
-    await userRef.set({ balance }, { merge: true });
-    embed.setColor(color).setDescription(
-      `Your hand: ${player.join(" ")}\nDealer: ${dealer.join(
-        " "
-      )}\n\n${result}\n**Balance:** $${balance}`
-    );
-    await i.update({ embeds: [embed], components: [] });
-    collector.stop();
-  }
-});
-
-      collector.on("end", (_, reason) => {
-        if (reason === "time") message.reply(`${message.author}, blackjack timed out.`);
-      });
-      return;
-    }
+  collector.on("end", (_, reason) => {
+    if (reason === "time")
+      message.reply(`${message.author}, blackjack timed out.`);
+  });
+  return;
+}
 
     default:
       return message.reply(`${message.author}, invalid command. Use \`!g help\`.`);
