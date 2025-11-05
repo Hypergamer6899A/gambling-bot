@@ -255,4 +255,37 @@ client.on("messageCreate", async (message) => {
             resultMsg = `It's a tie! Dealer had ${dealerHand.join(" ")}. Your bet is returned.`;
           }
           await userRef.set({ balance }, { merge: true });
-          await i.update
+                    await i.update({
+            embeds: [embed.setDescription(`Your hand: ${playerHand.join(" ")}\nDealer: ${dealerHand.join(" ")}\n\n${resultMsg}`)],
+            components: [],
+          });
+          collector.stop();
+        }
+      });
+
+      collector.on("end", (_, reason) => {
+        if (reason === "time") {
+          message.reply(`${message.author}, blackjack timed out.`);
+        }
+      });
+    }
+
+  } finally {
+    // Remove thinking emoji
+    if (reacted) {
+      try {
+        await message.reactions.removeAll();
+      } catch {}
+    }
+  }
+});
+
+// --- Express Server ---
+const app = express();
+app.get("/", (req, res) => res.send("Bot is running."));
+const serverPort = PORT || 3000;
+app.listen(serverPort, () => console.log(`[DEBUG] Listening on port ${serverPort}`));
+
+// --- Login ---
+client.login(TOKEN);
+
