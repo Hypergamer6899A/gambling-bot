@@ -44,20 +44,17 @@ const client = new Client({
   partials: [Partials.Channel],
 });
 
-// --- Prevent Multiple Instances (Render hot reload protection) ---
+// --- Prevent Multiple Instances ---
 if (global.__botStarted) {
   console.log("[DEBUG] Duplicate instance detected — exiting.");
   process.exit(0);
 }
 global.__botStarted = true;
 
-// --- Prevent Double Event Handlers ---
-if (client.listenerCount("messageCreate") > 0) {
-  client.removeAllListeners("messageCreate");
-  console.log("[DEBUG] Removed duplicate messageCreate listeners");
-}
+// --- Clean previous handlers (Render reload fix) ---
+client.removeAllListeners("messageCreate");
 
-// --- Track Processed Messages (anti-duplicate handler) ---
+// --- Track Processed Messages ---
 const processedMessages = new Set();
 
 // --- Presence ---
@@ -69,103 +66,96 @@ client.once("ready", () => {
   });
 });
 
-// --- Command Handler ---
+// --- Message Handler ---
 client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
-  if (message.channel.id !== CHANNEL_ID) return;
-  if (!message.content.startsWith("!g")) return;
-
-  // Prevent double-processing the same message
-  if (processedMessages.has(message.id)) {
-    console.log(`[DEBUG] Ignored duplicate message ID ${message.id}`);
-    return;
-  }
-  processedMessages.add(message.id);
-  setTimeout(() => processedMessages.delete(message.id), 30000);
-
-  const args = message.content.trim().split(/\s+/);
-  const command = args[1]?.toLowerCase();
-
-  // Add thinking emoji
-  let reacted = false;
-  if (THINKING_EMOJI) {
-    try {
-      await message.react(THINKING_EMOJI);
-      reacted = true;
-    } catch (err) {
-      console.log("[DEBUG] Failed to react:", err.message);
-    }
-  }
-
   try {
-    const userRef = db.collection("users").doc(message.author.id);
-    let userDoc = await userRef.get();
-    let userData = userDoc.exists ? userDoc.data() : {};
-    let balance = userData.balance;
-    if (balance === undefined) {
-      balance = 1000;
-      await userRef.set({ balance, lastClaim: 0 }, { merge: true });
-      userDoc = await userRef.get();
-      userData = userDoc.data();
+    if (message.author.bot) return;
+    if (message.channel.id !== CHANNEL_ID) return;
+    if (!message.content.startsWith("!g")) return;
+
+    if (processedMessages.has(message.id)) {
+      console.log(`[DEBUG] Ignored duplicate message ID ${message.id}`);
+      return;
     }
-    const lastClaim = userData.lastClaim ?? 0;
+    processedMessages.add(message.id);
+    setTimeout(() => processedMessages.delete(message.id), 30000);
 
-    console.log(`[DEBUG] ${message.author.username} command: ${command}, balance: ${balance}`);
+    const args = message.content.trim().split(/\s+/);
+    const command = args[1]?.toLowerCase();
 
-    // ---------- HELP ----------
-    if (command === "help") {
-      await message.reply(
+    let reacted = false;
+    if (THINKING_EMOJI) {
+      try {
+        await message.react(THINKING_EMOJI);
+        reacted = true;
+      } catch (err) {
+        console.log("[DEBUG] Failed to react:", err.message);
+      }
+    }
+
+    await handleCommand(command, args, message, db, client);
+
+    if (reacted) await message.reactions.removeAll();
+  } catch (err) {
+    console.error("[ERROR] in messageCreate:", err);
+  }
+});
+
+// --- Command Logic ---
+async function handleCommand(command, args, message, db, client) {
+  const userRef = db.collection("users").doc(message.author.id);
+  let userDoc = await userRef.get();
+  let userData = userDoc.exists ? userDoc.data() : {};
+  let balance = userData.balance ?? 1000;
+  let lastClaim = userData.lastClaim ?? 0;
+
+  if (!userDoc.exists) await userRef.set({ balance, lastClaim });
+
+  console.log(`[DEBUG] ${message.author.username} command: ${command}, balance: ${balance}`);
+
+  switch (command) {
+    case "help":
+      return message.reply(
         "**Available Commands:**\n" +
           "`!g help` - Show this help menu\n" +
           "`!g balance` - Check your balance\n" +
           "`!g roulette <red|black|odd|even> <amount>` - Bet on roulette\n" +
-          "`!g blackjack <amount>` - Play blackjack against the bot\n" +
+          "`!g blackjack <amount>` - Play blackjack\n" +
           "`!g claim` - Claim $100 when broke (every 24h)\n" +
           "`!g leaderboard` - Show top 5 richest players"
       );
-    }
 
-    // ---------- BALANCE ----------
-    else if (command === "balance") {
-      await message.reply(`${message.author}, your balance is **$${balance}**.`);
-    }
+    case "balance":
+      return message.reply(`${message.author}, your balance is **$${balance}**.`);
 
-    // ---------- CLAIM ----------
-    else if (command === "claim") {
-      if (balance > 0) {
-        await message.reply(`${message.author}, you still have money. You can only claim when broke.`);
-      } else {
-        const now = Date.now();
-        const dayMs = 24 * 60 * 60 * 1000;
-        if (now - lastClaim < dayMs) {
-          const hoursLeft = Math.ceil((dayMs - (now - lastClaim)) / (1000 * 60 * 60));
-          await message.reply(`${message.author}, you can claim again in **${hoursLeft} hour(s)**.`);
-        } else {
-          balance += 100;
-          await userRef.set({ balance, lastClaim: now }, { merge: true });
-          await message.reply(`${message.author}, you claimed **$100**! New balance: **$${balance}**.`);
-        }
+    case "claim": {
+      if (balance > 0)
+        return message.reply(`${message.author}, you still have money. You can only claim when broke.`);
+
+      const now = Date.now();
+      const dayMs = 24 * 60 * 60 * 1000;
+      if (now - lastClaim < dayMs) {
+        const hoursLeft = Math.ceil((dayMs - (now - lastClaim)) / (1000 * 60 * 60));
+        return message.reply(`${message.author}, you can claim again in **${hoursLeft} hour(s)**.`);
       }
+
+      balance += 100;
+      await userRef.set({ balance, lastClaim: now }, { merge: true });
+      return message.reply(`${message.author}, you claimed **$100**! New balance: **$${balance}**.`);
     }
 
-    // ---------- ROULETTE ----------
-    else if (command === "roulette") {
+    case "roulette": {
       const betType = args[2]?.toLowerCase();
       const betAmount = parseInt(args[3]);
-      if (!betType || isNaN(betAmount)) {
-        await message.reply(`${message.author}, usage: \`!g roulette <red|black|odd|even> <amount>\``);
-        return;
-      }
-      if (betAmount <= 0 || betAmount > balance) {
-        await message.reply(`${message.author}, invalid bet amount.`);
-        return;
-      }
+      if (!betType || isNaN(betAmount))
+        return message.reply(`${message.author}, usage: \`!g roulette <red|black|odd|even> <amount>\``);
+
+      if (betAmount <= 0 || betAmount > balance)
+        return message.reply(`${message.author}, invalid bet amount.`);
 
       const valid = ["red", "black", "odd", "even"];
-      if (!valid.includes(betType)) {
-        await message.reply(`${message.author}, valid bets: red, black, odd, even.`);
-        return;
-      }
+      if (!valid.includes(betType))
+        return message.reply(`${message.author}, valid bets: red, black, odd, even.`);
 
       const spin = Math.floor(Math.random() * 36) + 1;
       const color = spin % 2 === 0 ? "black" : "red";
@@ -175,13 +165,12 @@ client.on("messageCreate", async (message) => {
       balance += win ? betAmount : -betAmount;
       await userRef.set({ balance, lastClaim }, { merge: true });
 
-      await message.reply(
+      return message.reply(
         `${message.author}, you ${win ? "won" : "lost"}! The ball landed on **${spin} (${color})**. New balance: **$${balance}**.`
       );
     }
 
-    // ---------- LEADERBOARD ----------
-    else if (command === "leaderboard") {
+    case "leaderboard": {
       const snapshot = await db.collection("users").orderBy("balance", "desc").get();
       const allUsers = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
       const top5 = allUsers.slice(0, 5);
@@ -193,16 +182,13 @@ client.on("messageCreate", async (message) => {
         })
       );
 
-      await message.reply(`**Top 5 Richest Players:**\n${lines.join("\n")}`);
+      return message.reply(`**Top 5 Richest Players:**\n${lines.join("\n")}`);
     }
 
-    // ---------- BLACKJACK ----------
-    else if (command === "blackjack") {
+    case "blackjack": {
       const betAmount = parseInt(args[2]);
-      if (isNaN(betAmount) || betAmount <= 0 || betAmount > balance) {
-        await message.reply(`${message.author}, invalid bet amount.`);
-        return;
-      }
+      if (isNaN(betAmount) || betAmount <= 0 || betAmount > balance)
+        return message.reply(`${message.author}, invalid bet amount.`);
 
       balance -= betAmount;
       await userRef.set({ balance }, { merge: true });
@@ -292,15 +278,13 @@ client.on("messageCreate", async (message) => {
       collector.on("end", (_, reason) => {
         if (reason === "time") message.reply(`${message.author}, blackjack timed out.`);
       });
+      return;
     }
-  } finally {
-    if (reacted) {
-      try {
-        await message.reactions.removeAll();
-      } catch {}
-    }
+
+    default:
+      return message.reply(`${message.author}, invalid command. Use \`!g help\`.`);
   }
-});
+}
 
 // --- Express Keepalive ---
 const app = express();
