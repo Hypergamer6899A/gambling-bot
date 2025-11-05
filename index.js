@@ -135,19 +135,21 @@ if (command === "leaderboard") {
   const allUsers = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
   const top5 = allUsers.slice(0, 5);
 
-  let leaderboard = "**Top 5 Richest Players:**\n";
+  const usernames = [];
   for (let i = 0; i < top5.length; i++) {
     const user = await client.users.fetch(top5[i].id).catch(() => null);
     const username = user ? user.username : "Unknown User";
-    leaderboard += `${i + 1}. ${username} — **${top5[i].balance}**\n`;
+    usernames.push(`${i + 1}. ${username} - ${top5[i].balance}`);
   }
 
   const userIndex = allUsers.findIndex((u) => u.id === message.author.id);
+  let extraLine = "";
   if (userIndex >= 5) {
     const userBalance = allUsers[userIndex]?.balance ?? 0;
-    leaderboard += `\nYour Rank: **${userIndex + 1}** — ${userBalance}`;
+    extraLine = `\nYour Rank: ${userIndex + 1} - ${userBalance}`;
   }
 
+  const leaderboard = `**Top 5 Richest Players:**\n${usernames.join("\n")}${extraLine}`;
   return message.reply({ content: leaderboard, allowedMentions: { repliedUser: false } });
 }
 
