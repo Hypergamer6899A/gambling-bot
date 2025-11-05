@@ -48,8 +48,7 @@ client.on("interactionCreate", async (interaction) => {
         "`/help` - Show this help menu\n" +
         "`!g balance` - Check your balance\n" +
         "`!g roulette <red|black|odd|even> <amount>` - Bet on roulette\n" +
-        "`!g claim` - If broke, claim 100 coins every 24 hours\n" +
-        "`!g leaderboard` - Show top 5 richest players (with your rank)"
+        "`!g claim` - If broke, claim 100 coins every 24 hours\n"
     );
   }
 });
@@ -115,43 +114,6 @@ client.on("messageCreate", async (message) => {
       `${message.author}, you ${win ? "won" : "lost"}! The ball landed on **${spin} (${color})**. New balance: **${balance}**.`
     );
   }
-// --- !g leaderboard ---
-if (command === "leaderboard") {
-  try {
-    const snapshot = await db.collection("users").orderBy("balance", "desc").get();
-    if (snapshot.empty) {
-      return message.reply({
-        content: "No users found in the leaderboard.",
-        allowedMentions: { parse: [] },
-      });
-    }
-
-    const allUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    const top5 = allUsers.slice(0, 5);
-
-    const lines = await Promise.all(top5.map(async (u, i) => {
-      const user = await client.users.fetch(u.id).catch(() => null);
-      const username = user?.username || "Unknown User";
-      return `${i + 1}. ${username} - ${u.balance}`;
-    }));
-
-    const userIndex = allUsers.findIndex(u => u.id === message.author.id);
-    if (userIndex >= 5) {
-      const userBalance = allUsers[userIndex]?.balance ?? 0;
-      lines.push(`\nYour Rank: ${userIndex + 1} - ${userBalance}`);
-    }
-
-    return message.reply({
-      content: `**Top 5 Richest Players:**\n${lines.join("\n")}`,
-      allowedMentions: { parse: [] },
-    });
-  } catch (err) {
-    console.error("Leaderboard error:", err);
-    return message.reply("Something went wrong fetching the leaderboard.");
-  }
-}
-
-
 // --- Dummy HTTP Server for Render ---
 const app = express();
 app.get("/", (req, res) => res.send("Bot is running."));
