@@ -44,6 +44,13 @@ const client = new Client({
   partials: [Partials.Channel],
 });
 
+// Prevent double startup from Render hot-restart
+if (process.env.RENDER === "true" && global.__botStarted) {
+  console.log("[DEBUG] Duplicate process detected, exiting...");
+  process.exit(0);
+}
+global.__botStarted = true;
+
 // --- Presence ---
 client.once("ready", () => {
   console.log(`Logged in as ${client.user.tag}`);
