@@ -104,6 +104,15 @@ async function handleCommand(command, args, message, db, client) {
   let balance = userData.balance ?? 1000;
   let lastClaim = userData.lastClaim ?? 0;
 
+  await userRef.set(
+  {
+    username: message.author.username,
+    balance,
+    lastClaim,
+  },
+  { merge: true }
+);
+
   if (!userDoc.exists) await userRef.set({ balance, lastClaim });
 
   switch (command) {
