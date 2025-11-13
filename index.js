@@ -515,15 +515,22 @@ if (!category) {
   console.warn(`[UNO] Category ID ${process.env.UNO_CATEGORY_ID} not found, creating channel at root.`);
 }
 
+const category = guild.channels.cache.get(process.env.UNO_CATEGORY_ID);
+
+if (!category || category.type !== 4) { // 4 = GuildCategory
+  console.warn(`[UNO] Invalid or missing category ID: ${process.env.UNO_CATEGORY_ID}. Creating at root.`);
+}
+
 const gameChannel = await guild.channels.create({
   name: channelName,
   type: 0,
-  parent: category?.id || null,
+  parent: category?.id ?? undefined,
   permissionOverwrites: [
     { id: guild.roles.everyone.id, deny: ["ViewChannel"] },
     { id: message.author.id, allow: ["ViewChannel", "SendMessages", "ReadMessageHistory"] },
-    { id: client.user.id, allow: ["ViewChannel", "SendMessages", "ReadMessageHistory"] },
+    { id: client.user.id, allow: ["ViewChannel", "SendMessages", "ReadMessageHistory", "ManageMessages", "EmbedLinks"] },
   ],
+  reason: `UNO game channel for ${message.author.tag}`,
 });
 
       await gameChannel.send(`${message.author}, this is your UNO game!`);
