@@ -493,55 +493,89 @@ case "uno": {
   if (isNaN(bet) || bet <= 0 || bet > balance)
     return message.reply(`${message.author}, invalid bet amount.`);
 
+  const userId = message.author.id;
+  const userRef = db.collection("users").doc(userId);
+  const gameRef = db.collection("unoGames").doc(userId);
+
+  // If a game exists, restore / prevent duplicate
+  const existingDoc = await gameRef.get();
+  if (existingDoc.exists && existingDoc.data().active) {
+    const g = existingDoc.data();
+    // try to fetch the channel to make sure it's valid
+    try {
+      const ch = await client.channels.fetch(g.channelId);
+      return message.reply(`${message.author}, you already have an active UNO game: <#${g.channelId}>`);
+    } catch {
+      // stale doc: continue to create new game (fall-through)
+    }
+  }
+
+  // Deduct bet and ensure user doc
   balance -= bet;
-  await userRef.set({ balance }, { merge: true });
+  await userRef.set({ username: message.author.username, balance }, { merge: true });
 
+  // Create / ensure single channel under category
   const guild = message.guild;
-  const channelName = `uno-${message.author.username.toLowerCase().replace(/[^a-z0-9\-]/g,"")}`;
+  const channelName = `uno-${message.author.username.toLowerCase().replace(/[^a-z0-9\-]/g, "")}`;
 
-  // Delete any existing UNO channel for this user (under category)
-  const existing = guild.channels.cache.find(c => c.name === channelName && c.parentId === UNO_CATEGORY_ID);
-  if (existing) await existing.delete().catch(() => null);
+  // Remove any stale channels with same name (both with or without suffix)
+  const existingChannel = guild.channels.cache.find(c => c.name === channelName && c.parentId === UNO_CATEGORY_ID);
+  if (existingChannel) await existingChannel.delete().catch(() => null);
 
-  // Create UNO channel
   const gameChannel = await guild.channels.create({
     name: channelName,
     type: 0,
-    parent: UNO_CATEGORY_ID,
+    parent: UNO_CATEGORY_ID || undefined,
     permissionOverwrites: [
       { id: guild.roles.everyone.id, deny: ["ViewChannel"] },
-      { id: message.author.id, allow: ["ViewChannel","SendMessages","ReadMessageHistory"] },
-      { id: client.user.id, allow: ["ViewChannel","SendMessages","ReadMessageHistory","ManageMessages","EmbedLinks"] },
+      { id: message.author.id, allow: ["ViewChannel", "SendMessages", "ReadMessageHistory"] },
+      { id: client.user.id, allow: ["ViewChannel", "SendMessages", "ReadMessageHistory", "ManageMessages", "EmbedLinks"] },
     ],
     reason: `UNO game channel for ${message.author.tag}`,
   });
 
-  await gameChannel.send(`${message.author}, this is your UNO game!`);
-
-  // --- Initialize deck and hands ---
-  const colors = ["Red","Yellow","Green","Blue"];
-  const values = ["0","1","2","3","4","5","6","7","8","9","Skip","Draw 2","Reverse"];
+  // Utilities for this game scope
+  const COLORS = ["red", "yellow", "green", "blue"];
+  const VALUES = ["0","1","2","3","4","5","6","7","8","9","Skip","Draw 2","Reverse"];
+  // Build deck (four copies of each numeric/action per color like UNO)
   let deck = [];
-  for (const c of colors) for (const v of values) deck.push({ color: c, value: v });
-  for (let i=0;i<4;i++) { deck.push({ color: null, value:"Wild" }, { color:null, value:"Draw 4" }); }
-  deck = shuffle(deck);
+  for (const c of COLORS) {
+    deck.push({ color: c.charAt(0).toUpperCase()+c.slice(1), value: "0" });
+    for (const v of VALUES.slice(1)) {
+      deck.push({ color: c.charAt(0).toUpperCase()+c.slice(1), value: v }, { color: c.charAt(0).toUpperCase()+c.slice(1), value: v });
+    }
+  }
+  // add wilds and draw4s
+  for (let i=0;i<4;i++) { deck.push({ color: null, value: "Wild" }, { color: null, value: "Draw 4" }); }
+  // shuffle
+  deck = deck.sort(()=>Math.random()-0.5);
 
-  const drawCard = () => {
-    if (deck.length === 0) deck = shuffle(pile.splice(0,pile.length-1));
+  // pile will be created below
+  let pile = [];
+
+  function drawCard() {
+    // refill from pile (leave top)
+    if (deck.length === 0) {
+      if (pile.length <= 1) return null;
+      const top = pile.pop();
+      deck = pile.sort(()=>Math.random()-0.5);
+      pile = [top];
+    }
     return deck.pop();
-  };
+  }
 
-  const playerHand = Array.from({length:7},()=>drawCard());
-  const botHand = Array.from({length:7},()=>drawCard());
-  let pile = [drawCard()];
-
+  // initial hands + pile top (ensure top is not a Draw 4/Wild-only for nicer start; if it is, keep it)
+  const playerHand = [];
+  const botHand = [];
+  for (let i=0;i<7;i++) { playerHand.push(drawCard()); botHand.push(drawCard()); }
+  pile.push(drawCard());
   let playerTurn = true;
   let winner = null;
 
-  const formatCard = c => c.color ? `${c.color} ${c.value}` : c.value;
-  const formatHand = hand => hand.map(formatCard).join(", ");
+  // Embed content must include commands & examples per request
+  const formatCard = (c) => c ? (c.color ? `${c.color} ${c.value}` : c.value) : "Unknown";
+  const formatHand = (hand) => hand.map(formatCard).join(", ") || "(empty)";
 
-  // Initial embed (includes commands)
   const embed = new EmbedBuilder()
     .setTitle(`UNO vs Bot — Bet: $${bet}`)
     .setColor(0xff0000)
@@ -550,14 +584,30 @@ case "uno": {
       `**Your Hand:** ${formatHand(playerHand)}\n` +
       `**Bot Cards:** ${botHand.length}\n` +
       `**Turn:** ${playerTurn ? "Your move" : "Bot"}\n\n` +
-      `**Commands:**\n` +
-      "`!uno play <color> <value>` `!uno play wild <color>` `!uno play draw 4 <color>`\n" +
-      "`!uno draw` `!uno endgame` `!uno help`\n\n" +
-      `**Examples:**\n` +
-      "`!uno play green 5`  `!uno play red draw 2`  `!uno play wild red`  `!uno play draw 4 blue`"
+      `**Commands:** \`!uno play <color> <value>\`, \`!uno play wild <color>\`, \`!uno play draw 4 <color>\`, \`!uno draw\`, \`!uno endgame\`\n` +
+      `**Examples:** \`!uno play green 5\`, \`!uno play red draw 2\`, \`!uno play wild red\`, \`!uno play draw 4 blue\``
     );
 
-  let gameMessage = await gameChannel.send({ embeds:[embed] });
+  let gameMessage = await gameChannel.send({ embeds: [embed] });
+
+  // Save initial game state to Firestore
+  const saveGame = async () => {
+    const gs = {
+      userId,
+      channelId: gameChannel.id,
+      bet,
+      playerHand,
+      botHand,
+      deck,
+      pile,
+      playerTurn,
+      createdAt: Date.now(),
+      active: true,
+      embedMessageId: gameMessage.id,
+      lastAction: Date.now(),
+    };
+    await gameRef.set(gs, { merge: true });
+  };
 
   const updateEmbed = async () => {
     embed.setDescription(
@@ -565,320 +615,330 @@ case "uno": {
       `**Your Hand:** ${formatHand(playerHand)}\n` +
       `**Bot Cards:** ${botHand.length}\n` +
       `**Turn:** ${playerTurn ? "Your move" : "Bot"}\n\n` +
-      `**Commands:**\n` +
-      "`!uno play <color> <value>` `!uno play wild <color>` `!uno play draw 4 <color>`\n" +
-      "`!uno draw` `!uno endgame` `!uno help`\n\n" +
-      `**Examples:**\n` +
-      "`!uno play green 5`  `!uno play red draw 2`  `!uno play wild red`  `!uno play draw 4 blue`"
+      `**Commands:** \`!uno play <color> <value>\`, \`!uno play wild <color>\`, \`!uno play draw 4 <color>\`, \`!uno draw\`, \`!uno endgame\`\n` +
+      `**Examples:** \`!uno play green 5\`, \`!uno play red draw 2\`, \`!uno play wild red\`, \`!uno play draw 4 blue\``
     );
-    await gameMessage.edit({ embeds:[embed] });
+    await gameMessage.edit({ embeds: [embed] }).catch(()=>null);
+    await saveGame();
   };
 
-  // --- Bot logic (simple smart prioritization) ---
-  async function botPlay() {
-    await new Promise(r=>setTimeout(r,800)); // thinking pause
-    const top = pile[pile.length-1];
+  await saveGame();
 
-    // build playable set
-    let playable = botHand.filter(c => 
-      c.value.toLowerCase().includes("wild") ||
-      (c.color && c.color === top.color) ||
-      c.value === top.value
-    );
+  // Helper: forgiving matching between user input and a card in hand
+  const normalize = (s) => (s||"").toLowerCase().replace(/\s+/g," ").trim();
+  function cardMatchesInput(card, inputRaw) {
+    const input = inputRaw.replace(/\s+/g," ").trim();
+    if (!card) return false;
+    const cColor = card.color ? card.color.toLowerCase() : "";
+    const cValue = card.value.toLowerCase().replace(/\s+/g," ");
+    const variants = new Set();
+
+    if (card.color) {
+      variants.add(`${cColor} ${cValue}`);
+      variants.add(`${cColor} ${cValue.replace(/\s+/g,"")}`); // green draw2 -> "greendraw2"
+      variants.add(`${cValue}`); // "draw 2" or "5"
+      variants.add(`${cValue.replace(/\s+/g,"")}`); // "draw2"
+      variants.add(`${cColor} ${cValue.replace(/\s+/g,"")}`);
+    } else {
+      // wild or draw 4
+      variants.add(cValue);
+      variants.add(cValue.replace(/\s+/g,""));
+      variants.add(`draw4`); // for draw 4 shorthand
+      variants.add(`draw 4`);
+    }
+
+    // other shorthands
+    if (cValue === "draw 2") { variants.add("+2"); variants.add("draw2"); }
+    if (cValue === "draw 4") { variants.add("+4"); variants.add("draw4"); variants.add("draw 4"); }
+    // full forms may also match input like "green draw 2" vs "draw 2 green"
+    if (input === `${cColor} ${cValue}`) return true;
+    if (variants.has(input.replace(/\s+/g,""))) return true;
+    // also allow input where color appended at end: "draw 2 green"
+    const parts = input.split(" ");
+    if (parts.length >= 2) {
+      const last = parts[parts.length-1];
+      const rest = parts.slice(0, -1).join(" ");
+      if (last === cColor && variants.has(rest.replace(/\s+/g,""))) return true;
+    }
+    return false;
+  }
+
+  // Bot play logic (smarter) -- handles skip/draw behaviors for 1v1 correctly
+  async function botPlay() {
+    // small delay to simulate thinking
+    await new Promise(r=>setTimeout(r,800));
+    let top = pile[pile.length-1];
+    // find playable
+    const playable = botHand.filter(c => {
+      if (!c) return false;
+      if (!top) return true;
+      if (!c.color) return true; // wilds always playable
+      return (top.color && c.color === top.color) || c.value === top.value;
+    });
 
     if (playable.length === 0) {
       const drawn = drawCard();
-      botHand.push(drawn);
-      await gameChannel.send(`🤖 Bot drew a card.`).then(msg=>setTimeout(()=>safeDelete(msg),3000));
+      if (drawn) botHand.push(drawn);
+      const m = await gameChannel.send(`🤖 Bot drew a card.`);
+      setTimeout(()=>safeDelete(m),3000);
+      // after drawing, if it's playable, play it (UNO house rule: optional — keep simple: don't auto-play)
     } else {
-      // prefer Draw 4, Draw 2, Skip/Reverse, then numbers/wild
-      let chosen = playable.find(c => c.value === "Draw 4")
-                || playable.find(c => c.value === "Draw 2")
-                || playable.find(c => c.value === "Skip" || c.value === "Reverse")
-                || playable.find(c => c.value === "Wild")
-                || playable[Math.floor(Math.random()*playable.length)];
+      // prioritize: Draw 4 > Draw 2 > Skip/Reverse > other
+      let chosen = playable.find(c=>c.value==="Draw 4") || playable.find(c=>c.value==="Draw 2") ||
+                   playable.find(c=>c.value==="Skip") || playable.find(c=>c.value==="Reverse") ||
+                   playable[Math.floor(Math.random()*playable.length)];
 
-      // remove chosen
-      botHand.splice(botHand.indexOf(chosen),1);
-
-      // assign color for wilds based on bot hand composition
+      // assign color for wilds/draw4 based on bot's hand distribution
       if (chosen.value === "Wild" || chosen.value === "Draw 4") {
-        const counts = {Red:0,Yellow:0,Green:0,Blue:0};
+        const counts = { Red:0, Yellow:0, Green:0, Blue:0 };
         for (const c of botHand) if (c.color) counts[c.color] = (counts[c.color]||0)+1;
-        chosen.color = Object.keys(counts).reduce((a,b)=>counts[a]>=counts[b]?a:b);
+        // choose color with max count
+        let best = "Red";
+        for (const k of Object.keys(counts)) if (counts[k] > counts[best]) best = k;
+        chosen.color = best;
       }
 
+      // play chosen
+      botHand.splice(botHand.indexOf(chosen),1);
       pile.push(chosen);
-      let actionMsg = `🤖 Bot played ${formatCard(chosen)}.`;
+      const actionMsg = `🤖 Bot played ${formatCard(chosen)}.`;
+      const m = await gameChannel.send(actionMsg);
+      setTimeout(()=>safeDelete(m),3000);
 
+      // effects
       if (chosen.value === "Draw 2") {
         for (let i=0;i<2;i++) playerHand.push(drawCard());
-        actionMsg += ` You draw 2 cards.`;
+        // Draw2: next player is skipped -> in 1v1, bot plays again
+        await updateEmbed();
+        if (botHand.length === 0) { winner = "bot"; collector.stop("bot"); return; }
+        return botPlay(); // bot takes another turn
       }
       if (chosen.value === "Draw 4") {
         for (let i=0;i<4;i++) playerHand.push(drawCard());
-        actionMsg += ` You draw 4 cards.`;
+        await updateEmbed();
+        if (botHand.length === 0) { winner = "bot"; collector.stop("bot"); return; }
+        return botPlay();
       }
       if (chosen.value === "Skip" || chosen.value === "Reverse") {
-        actionMsg += ` Your turn is skipped.`;
+        // In 2-player, skip/reverse means bot gets another turn
+        await updateEmbed();
+        if (botHand.length === 0) { winner = "bot"; collector.stop("bot"); return; }
+        return botPlay();
       }
-
-      await gameChannel.send(actionMsg).then(msg=>setTimeout(()=>safeDelete(msg),3000));
     }
 
-    // after bot plays, check win
-    if (botHand.length === 0) { winner = "bot"; collector.stop("bot won"); return; }
-
-    // bot finished; make it player's turn
+    // end of bot's action -> set playerTurn true
     playerTurn = true;
     await updateEmbed();
+    if (botHand.length === 0) { winner = "bot"; collector.stop("bot"); return; }
   }
 
-  // --- Message collector ---
+  // Message collector
   const collector = gameChannel.createMessageCollector({
     filter: m => m.author.id === message.author.id,
-    time: 10 * 60 * 1000,
+    time: 10*60*1000
   });
 
-  collector.on("collect", async (m) => {
-    const rawArgs = m.content.trim().split(/\s+/);
-    const cmd = rawArgs[0]?.toLowerCase();
+  collector.on("collect", async m => {
+    const tokens = m.content.trim().split(/\s+/);
+    const cmd = tokens[0]?.toLowerCase();
     await m.react(THINKING_EMOJI).catch(()=>null);
 
-    const norm = s => s?.toString().toLowerCase().replace(/\s+/g,"").trim();
+    // ignore non-!uno messages (or warn)
+    if (cmd !== "!uno") {
+      await m.delete().catch(()=>{});
+      return;
+    }
 
-    // turn enforcement: allow help anytime; others only on player's turn
-    if (cmd === "!uno" && norm(rawArgs[1]) === "help") {
+    const sub = normalize(tokens[1]||"");
+
+    // HELP
+    if (sub === "help") {
       const helpEmbed = new EmbedBuilder()
         .setTitle("UNO Commands")
         .setColor(0xff0000)
         .setDescription(
           "**Commands:**\n" +
-          "`!uno play <color> <value>` - Play a card (e.g. `!uno play green 5`)\n" +
-          "`!uno play wild <color>` - Play a Wild (e.g. `!uno play wild red`)\n" +
-          "`!uno play draw 4 <color>` - Play Wild Draw 4 (e.g. `!uno play draw 4 blue`)\n" +
-          "`!uno draw` - Draw a card\n" +
-          "`!uno endgame` - End the game\n\n" +
-          "**Notes:** Colors: red, yellow, green, blue. Values like `draw 2`, `skip`, `reverse`, numbers 0-9."
+          "`!uno play <color> <value>` - Play a card\n" +
+          "`!uno play wild <color>` - Play a Wild card\n" +
+          "`!uno play draw 4 <color>` - Play a Wild Draw 4\n" +
+          "`!uno draw` - Draw a card (then bot moves)\n" +
+          "`!uno endgame` - End the current game\n\n" +
+          "**Examples:**\n" +
+          "`!uno play green 5`\n" +
+          "`!uno play red draw 2`\n" +
+          "`!uno play wild red`\n" +
+          "`!uno play draw 4 blue`"
         );
       await m.reply({ embeds: [helpEmbed] }).catch(()=>null);
-      await m.delete().catch(()=>{});
-      return;
-    }
-
-    if (!playerTurn && cmd === "!uno" && norm(rawArgs[1]) !== "help") {
-      await m.delete().catch(()=>{});
-      const warn = await gameChannel.send(`${message.author}, wait for your turn.`).catch(()=>null);
-      if (warn) setTimeout(()=>safeDelete(warn),3000);
-      return;
-    }
-
-    // DRAW
-    if (cmd === "!uno" && norm(rawArgs[1]) === "draw") {
-      const drawn = drawCard();
-      playerHand.push(drawn);
-      await m.delete().catch(()=>{});
-      await gameChannel.send(`${message.author}, you drew ${formatCard(drawn)}.`).then(msg=>setTimeout(()=>safeDelete(msg),3000));
-      playerTurn = false;
-      await updateEmbed();
-      await botPlay();
+      await m.delete().catch(()=>null);
       return;
     }
 
     // ENDGAME
-    if (cmd === "!uno" && norm(rawArgs[1]) === "endgame") {
-      await m.delete().catch(()=>{});
-      await gameChannel.send(`${message.author} ended the UNO game.`).then(msg=>setTimeout(()=>safeDelete(msg),3000));
+    if (sub === "endgame") {
+      await m.delete().catch(()=>null);
+      const endMsg = await gameChannel.send(`${message.author} ended the UNO game.`);
+      setTimeout(()=>safeDelete(endMsg),3000);
       collector.stop("ended");
       return;
     }
 
-    // PLAY
-    if (cmd === "!uno" && norm(rawArgs[1]) === "play") {
-      // parse play arguments loosely
-      // examples accepted:
-      // !uno play green 5
-      // !uno play red draw 2
-      // !uno play wild red
-      // !uno play draw 4 blue
-      const playArgs = rawArgs.slice(2).map(a => a.toLowerCase());
-      if (playArgs.length === 0) {
-        await m.delete().catch(()=>{});
-        const warn = await gameChannel.send(`${message.author}, specify a card to play (e.g. green 5).`);
-        if (warn) setTimeout(()=>safeDelete(warn),3000);
-        return;
-      }
+    // if it's not player's turn, block other commands
+    if (!playerTurn && sub !== "help") {
+      await m.delete().catch(()=>null);
+      const warn = await gameChannel.send(`${message.author}, wait for your turn!`);
+      setTimeout(()=>safeDelete(warn),3000);
+      return;
+    }
 
-      // helper to find card index by normalized representation
-      const findCardIndexBy = (predicate) => playerHand.findIndex((c, i) => predicate(c, i));
-
-      // handle wild draw 4 patterns
-      const playIsDraw4 = (playArgs[0] === "draw" && (playArgs[1] === "4" || playArgs[1] === "four")) ||
-                          (playArgs[0] === "draw4" || playArgs[0] === "draw4,");
-      if (playIsDraw4) {
-        const colorArg = playArgs.slice(-1)[0];
-        // find a Draw 4 in hand
-        const idx = findCardIndexBy(c => c.value.toLowerCase() === "draw 4" || c.value.toLowerCase() === "draw4");
-        if (idx === -1) {
-          await m.delete().catch(()=>{});
-          const warn = await gameChannel.send(`${message.author}, you don't have a Draw 4 card.`);
-          if (warn) setTimeout(()=>safeDelete(warn),3000);
-          return;
-        }
-        if (!["red","yellow","green","blue"].includes(colorArg)) {
-          await m.delete().catch(()=>{});
-          const warn = await gameChannel.send(`${message.author}, specify a color after Draw 4: red, yellow, green, blue.`);
-          if (warn) setTimeout(()=>safeDelete(warn),3000);
-          return;
-        }
-        const played = playerHand.splice(idx,1)[0];
-        played.color = colorArg.charAt(0).toUpperCase() + colorArg.slice(1);
-        pile.push(played);
-        for (let i=0;i<4;i++) botHand.push(drawCard());
-        await m.delete().catch(()=>{});
-        await gameChannel.send(`${message.author} played Draw 4 (${played.color}). Bot draws 4.`).then(msg=>setTimeout(()=>safeDelete(msg),3000));
-        // after Draw4, playerTurn -> false then botPlay()
-        playerTurn = false;
-        await updateEmbed();
-        await botPlay();
-        return;
-      }
-
-      // handle wild (plain)
-      if (playArgs[0] === "wild") {
-        const colorArg = playArgs[1];
-        const idx = findCardIndexBy(c => c.value.toLowerCase() === "wild");
-        if (idx === -1) {
-          await m.delete().catch(()=>{});
-          const warn = await gameChannel.send(`${message.author}, you don't have a Wild card.`);
-          if (warn) setTimeout(()=>safeDelete(warn),3000);
-          return;
-        }
-        if (!["red","yellow","green","blue"].includes(colorArg)) {
-          await m.delete().catch(()=>{});
-          const warn = await gameChannel.send(`${message.author}, specify a color after Wild: red, yellow, green, blue.`);
-          if (warn) setTimeout(()=>safeDelete(warn),3000);
-          return;
-        }
-        const played = playerHand.splice(idx,1)[0];
-        played.color = colorArg.charAt(0).toUpperCase() + colorArg.slice(1);
-        pile.push(played);
-        await m.delete().catch(()=>{});
-        await gameChannel.send(`${message.author} played Wild (${played.color}).`).then(msg=>setTimeout(()=>safeDelete(msg),3000));
-        playerTurn = false;
-        await updateEmbed();
-        await botPlay();
-        return;
-      }
-
-      // normal card: expect first token color, rest value (e.g. "green draw 2" or "red 5")
-      const colorToken = playArgs[0];
-      const valueToken = playArgs.slice(1).join(" ").trim(); // e.g. "draw 2" or "5"
-      if (!["red","yellow","green","blue"].includes(colorToken) || !valueToken) {
-        await m.delete().catch(()=>{});
-        const warn = await gameChannel.send(`${message.author}, correct usage: \`!uno play <color> <value>\` (e.g. \`!uno play green 5\` or \`!uno play red draw 2\`).`);
-        if (warn) setTimeout(()=>safeDelete(warn),4000);
-        return;
-      }
-
-      // find matching card in hand (for forgiving matching)
-      const cardIndex = playerHand.findIndex(c => {
-        const colorMatch = c.color && c.color.toLowerCase() === colorToken;
-        const valueMatch = c.value.toLowerCase().replace(/\s+/g,"") === valueToken.replace(/\s+/g,"");
-        return colorMatch && valueMatch;
-      });
-
-      if (cardIndex === -1) {
-        await m.delete().catch(()=>{});
-        const warn = await gameChannel.send(`${message.author}, you don't have ${colorToken} ${valueToken}.`);
-        if (warn) setTimeout(()=>safeDelete(warn),3000);
-        return;
-      }
-
-      // play the card
-      const played = playerHand.splice(cardIndex,1)[0];
-      const top = pile[pile.length-1];
-      const match = (played.color && top.color && played.color === top.color) ||
-                    played.value === top.value ||
-                    played.value.toLowerCase().includes("wild");
-
-      if (!match) {
-        // can't play on top
-        playerHand.push(played);
-        await m.delete().catch(()=>{});
-        const warn = await gameChannel.send(`${message.author}, can't play ${formatCard(played)} on ${formatCard(top)}.`);
-        if (warn) setTimeout(()=>safeDelete(warn),3000);
-        return;
-      }
-
-      // valid play: push to pile
-      pile.push(played);
-      await m.delete().catch(()=>{});
-      await gameChannel.send(`${message.author}, you played ${formatCard(played)}.`).then(msg=>setTimeout(()=>safeDelete(msg),3000));
-
-      // check for win
-      if (playerHand.length === 0) { winner = "player"; collector.stop("player won"); return; }
-
-      // handle special effects for player plays
-      const val = played.value.toLowerCase();
-      if (val === "draw 2") {
-        for (let i=0;i<2;i++) botHand.push(drawCard());
-        // after applying draw2, player's turn is skipped -> bot plays next
-        playerTurn = false;
-        await updateEmbed();
-        await botPlay();
-        return;
-      }
-
-      if (val === "draw 4") {
-        for (let i=0;i<4;i++) botHand.push(drawCard());
-        playerTurn = false;
-        await updateEmbed();
-        await botPlay();
-        return;
-      }
-
-      if (val === "skip") {
-        // skip bot's opponent? in 1v1, skip means bot loses its turn -> player gets another turn
-        // but traditionally skip skips opponent; here to match earlier behavior: skip makes bot skip -> player retains turn
-        playerTurn = true;
-        await updateEmbed();
-        const skipMsg = await gameChannel.send(`${message.author}, you skipped the bot's turn!`).catch(()=>null);
-        if (skipMsg) setTimeout(()=>safeDelete(skipMsg),3000);
-        return;
-      }
-
-      if (val === "reverse") {
-        // user requested: make Reverse give the player another turn
-        playerTurn = true;
-        await updateEmbed();
-        const revMsg = await gameChannel.send(`${message.author}, Reverse — you get another turn.`).catch(()=>null);
-        if (revMsg) setTimeout(()=>safeDelete(revMsg),3000);
-        return;
-      }
-
-      // normal number / non-special -> hand to bot
+    // DRAW
+    if (sub === "draw") {
+      const drawn = drawCard();
+      if (drawn) playerHand.push(drawn);
+      await m.delete().catch(()=>null);
+      const dm = await gameChannel.send(`${message.author}, you drew ${formatCard(drawn)}.`);
+      setTimeout(()=>safeDelete(dm),3000);
+      // drawing causes you to skip your play and then bot plays
       playerTurn = false;
       await updateEmbed();
       await botPlay();
       return;
     }
+
+    // PLAY
+    if (sub === "play") {
+      const inputRaw = tokens.slice(2).join(" ").toLowerCase().trim();
+      if (!inputRaw) {
+        await m.delete().catch(()=>null);
+        const warn = await gameChannel.send(`${message.author}, usage: \`!uno play <color> <value>\``);
+        setTimeout(()=>safeDelete(warn),3000);
+        return;
+      }
+
+      // Find card index in player's hand using forgiving matcher
+      const cardIndex = playerHand.findIndex(c => cardMatchesInput(c, inputRaw));
+      if (cardIndex === -1) {
+        await m.delete().catch(()=>null);
+        const warn = await gameChannel.send(`${message.author}, you don't have that card.`);
+        setTimeout(()=>safeDelete(warn),3000);
+        return;
+      }
+
+      const played = playerHand.splice(cardIndex,1)[0];
+      // If it's a wild / draw4 and user appended a color, accept that
+      const lastToken = tokens[tokens.length-1]?.toLowerCase();
+      if ((played.value === "Wild" || played.value === "Draw 4") && COLORS.includes(lastToken)) {
+        played.color = lastToken.charAt(0).toUpperCase() + lastToken.slice(1);
+      }
+
+      const top = pile[pile.length-1];
+      const legal = !played.value ? false :
+        (played.value.toLowerCase().includes("wild") || (top && played.color && top.color && played.color === top.color) || (top && played.value === top.value));
+
+      if (!legal) {
+        // illegal play -> return card
+        playerHand.push(played);
+        await m.delete().catch(()=>null);
+        const warn = await gameChannel.send(`${message.author}, can't play ${formatCard(played)} on ${formatCard(top)}.`);
+        setTimeout(()=>safeDelete(warn),3000);
+        return;
+      }
+
+      // Wild/Draw4 require color specification (either appended like "wild red" or last token)
+      if ((played.value === "Wild" || played.value === "Draw 4") && !played.color) {
+        // try to extract color from input: maybe input like "wild red" or "draw 4 blue"
+        const maybeColor = tokens.slice(2).slice(-1)[0]?.toLowerCase();
+        if (COLORS.includes(maybeColor)) {
+          played.color = maybeColor.charAt(0).toUpperCase()+maybeColor.slice(1);
+        } else {
+          // not specified -> return card to hand & warn
+          playerHand.push(played);
+          await m.delete().catch(()=>null);
+          const warn = await gameChannel.send(`${message.author}, you must pick a color after Wild/Draw 4: red, yellow, green, blue.`);
+          setTimeout(()=>safeDelete(warn),3000);
+          return;
+        }
+      }
+
+      // Play the card
+      pile.push(played);
+      await m.delete().catch(()=>null);
+      const playedMsg = await gameChannel.send(`${message.author}, you played ${formatCard(played)}.`);
+      setTimeout(()=>safeDelete(playedMsg),3000);
+      await updateEmbed();
+
+      // Check win
+      if (playerHand.length === 0) { winner = "player"; collector.stop("player"); return; }
+
+      // Handle effects: Draw 2 / Draw 4 / Skip / Reverse
+      if (played.value === "Draw 2") {
+        for (let i=0;i<2;i++) botHand.push(drawCard());
+        // Draw 2: next player (bot) is skipped in 2-player => player gets another turn
+        playerTurn = true;
+        await updateEmbed();
+        return;
+      }
+      if (played.value === "Draw 4") {
+        for (let i=0;i<4;i++) botHand.push(drawCard());
+        playerTurn = true;
+        await updateEmbed();
+        return;
+      }
+      if (played.value === "Skip") {
+        // Skip: bot is skipped -> player goes again
+        playerTurn = true;
+        const skipMsg = await gameChannel.send(`${message.author}, you skipped the bot's turn!`);
+        setTimeout(()=>safeDelete(skipMsg),3000);
+        await updateEmbed();
+        return;
+      }
+      if (played.value === "Reverse") {
+        // In 1v1 reverse acts like skip => player plays again
+        playerTurn = true;
+        const revMsg = await gameChannel.send(`${message.author}, reverse - you play again (1v1).`);
+        setTimeout(()=>safeDelete(revMsg),3000);
+        await updateEmbed();
+        return;
+      }
+
+      // Normal play: hand -> bot's turn
+      playerTurn = false;
+      await updateEmbed();
+      await botPlay();
+      return;
+    }
+
+    // unknown subcommand
+    await m.delete().catch(()=>null);
   });
 
   collector.on("end", async (_, reason) => {
+    // mark game inactive and payout/cleanup
+    const doc = await gameRef.get();
+    if (doc.exists) {
+      const g = doc.data();
+      g.active = false;
+      await gameRef.set({ active: false }, { merge: true });
+    }
+
     if (winner === "player") {
       balance += bet * 2;
       await userRef.set({ balance }, { merge: true });
-      await gameChannel.send(`${message.author}, you won! You earned $${bet * 2}.`);
+      await gameChannel.send(`${message.author}, you won! You earned $${bet*2}.`);
     } else if (winner === "bot") {
       await gameChannel.send(`${message.author}, you lost your $${bet}.`);
     } else {
       await gameChannel.send(`${message.author}, UNO timed out or ended. You lost your $${bet}.`);
     }
+
     await userRef.set({ balance }, { merge: true });
-    setTimeout(() => gameChannel.delete().catch(() => {}), 5000);
+    // delete firestore doc
+    await gameRef.delete().catch(()=>null);
+    setTimeout(()=>gameChannel.delete().catch(()=>null), 5000);
   });
 
+  // initial update and save
   await updateEmbed();
   return;
 }
