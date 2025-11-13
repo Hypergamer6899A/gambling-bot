@@ -124,8 +124,60 @@ async function handleCommand(command, args, message, db, client) {
           "`!g roulette <red|black|odd|even> <amount>` - Bet on roulette\n" +
           "`!g blackjack <amount>` - Play blackjack\n" +
           "`!g claim` - Claim $100 when broke (every 24h)\n" +
-          "`!g leaderboard` - Show top 5 richest players"
+          "`!g leaderboard` - Show top 5 richest players\n" +
+          "`!g gift @user <amount>` - Gift money to another player\n"
       );
+case "gift": {
+  const target = message.mentions.users.first();
+  const amountArg = args[3];
+
+  if (!target)
+    return message.reply(`${message.author}, you need to mention someone to gift money to.`);
+
+  if (target.bot)
+    return message.reply(`${message.author}, you can’t gift money to bots.`);
+
+  if (target.id === message.author.id)
+    return message.reply(`${message.author}, you can’t gift yourself.`);
+
+  if (!amountArg)
+    return message.reply(`${message.author}, usage: \`!g gift @user <amount|all>\``);
+
+  let amount;
+  if (amountArg.toLowerCase() === "all") {
+    if (balance <= 0)
+      return message.reply(`${message.author}, you have no money to gift.`);
+    amount = balance;
+  } else {
+    amount = parseInt(amountArg);
+    if (isNaN(amount) || amount <= 0)
+      return message.reply(`${message.author}, please enter a valid amount or use \`all\`.`);
+    if (amount > balance)
+      return message.reply(`${message.author}, you don’t have enough money to gift that amount.`);
+  }
+
+  // Check if recipient exists in database
+  const targetRef = db.collection("users").doc(target.id);
+  const targetDoc = await targetRef.get();
+
+  if (!targetDoc.exists) {
+    await targetRef.set({ username: target.username, balance: 1000, lastClaim: 0 });
+    console.log(`[INFO] Created new user profile for ${target.username}`);
+  }
+
+  const targetData = (await targetRef.get()).data();
+  const targetBalance = (targetData.balance ?? 1000) + amount;
+
+  // Update both users
+  balance -= amount;
+  await userRef.set({ balance }, { merge: true });
+  await targetRef.set({ balance: targetBalance, username: target.username }, { merge: true });
+
+  return message.reply(
+    `${message.author} gifted ${target.username} **$${amount}**.\n` +
+    `Your new balance: **$${balance}**.`
+  );
+}
 
     case "balance":
       return message.reply(`${message.author}, your balance is **$${balance}**.`);
