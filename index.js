@@ -748,7 +748,7 @@ const gameChannel = await guild.channels.create({
       return;
     }
   }
-
+}
 // --- Express keepalive ---
 const app = express();
 app.get("/", (_, res) => res.send("Bot is running."));
