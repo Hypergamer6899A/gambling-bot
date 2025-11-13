@@ -487,61 +487,65 @@ async function handleGCommand(message) {
       await targetRef.set({ balance: targetBalance, username: target.username }, { merge: true });
       return message.reply(`${message.author} gifted ${target.username} **$${amount}**.\nYour new balance: **$${balance}**.`);
     }
-      case "uno": {
+case "uno": {
   const bet = parseInt(args[2]);
   if (isNaN(bet) || bet <= 0 || bet > balance)
     return message.reply(`${message.author}, invalid bet amount.`);
 
+  // Deduct bet
   balance -= bet;
   await userRef.set({ balance }, { merge: true });
 
   const guild = message.guild;
   const channelName = `uno-${message.author.username.toLowerCase()}`;
 
-  // delete any existing UNO channel for this user
+  // Delete any existing UNO channel for this user
   const existing = guild.channels.cache.find(
-    (c) => c.name === channelName && c.parentId === UNO_CATEGORY_ID
+    c => c.name === channelName && c.parentId === UNO_CATEGORY_ID
   );
   if (existing) await existing.delete().catch(() => null);
 
-  // Create private channel
+  // Create private channel under UNO_CATEGORY_ID
   const gameChannel = await guild.channels.create({
     name: channelName,
-    type: 0,
+    type: 0, // GUILD_TEXT
     parent: UNO_CATEGORY_ID,
     permissionOverwrites: [
-      { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
-      { id: message.author.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
-      { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageMessages, PermissionFlagsBits.EmbedLinks] },
+      { id: guild.roles.everyone.id, deny: ["ViewChannel"] },
+      { id: message.author.id, allow: ["ViewChannel", "SendMessages", "ReadMessageHistory"] },
+      { id: client.user.id, allow: ["ViewChannel", "SendMessages", "ReadMessageHistory", "ManageMessages", "EmbedLinks"] },
     ],
     reason: `UNO game channel for ${message.author.tag}`,
   });
 
   await gameChannel.send(`${message.author}, this is your UNO game!`);
 
-  // --- Deck as objects ---
-  function createObjectDeck() {
-    const colors = ["Red", "Yellow", "Green", "Blue"];
-    const values = ["0","1","2","3","4","5","6","7","8","9","Skip","Draw 2","Reverse"];
-    let deck = [];
-    for (const color of colors) for (const value of values) deck.push({ color, value });
-    for (let i = 0; i < 4; i++) deck.push({ color: null, value: "Wild" }, { color: null, value: "Draw 4" });
-    return deck.sort(() => Math.random() - 0.5);
-  }
+  // Initialize deck
+  const colors = ["Red", "Yellow", "Green", "Blue"];
+  const values = ["0","1","2","3","4","5","6","7","8","9","Skip","Draw 2","Reverse"];
+  const specials = ["Wild","Draw 4"];
 
-  let deck = createObjectDeck();
+  let deck = [];
+  for (const color of colors) {
+    for (const value of values) deck.push({ color, value });
+    for (const value of values.slice(1)) deck.push({ color, value }); // duplicate except 0
+  }
+  for (const s of specials) for (let i=0; i<4; i++) deck.push({ color: null, value: s });
+
+  // Shuffle
+  deck = deck.sort(() => Math.random() - 0.5);
 
   const drawCard = () => deck.pop();
   const playerHand = Array.from({ length: 7 }, drawCard);
   const botHand = Array.from({ length: 7 }, drawCard);
-  const pile = [drawCard()];
+  const pile = [drawCard()]; // top card
   let playerTurn = true;
   let winner = null;
 
   const formatCard = c => c.color ? `${c.color} ${c.value}` : c.value;
   const formatHand = hand => hand.map(formatCard).join(", ");
 
-  // --- Embed ---
+  // Send embed
   const embed = new EmbedBuilder()
     .setTitle(`UNO vs Bot — Bet: $${bet}`)
     .setColor(0xff0000)
@@ -569,12 +573,12 @@ async function handleGCommand(message) {
     time: 10 * 60 * 1000,
   });
 
-  const normalize = str => str?.toLowerCase().replace(/\s+/g,"");
-
-  collector.on("collect", async (m) => {
+  collector.on("collect", async m => {
     const args = m.content.trim().split(/\s+/);
     const cmd = args[0].toLowerCase();
     await m.react(THINKING_EMOJI).catch(() => null);
+
+    const normalize = str => str?.toLowerCase().replace(/\s+/g,"");
 
     // DRAW
     if (cmd === "!uno" && normalize(args[1]) === "draw") {
@@ -587,15 +591,6 @@ async function handleGCommand(message) {
       return;
     }
 
-    // ENDGAME
-    if (cmd === "!uno" && normalize(args[1]) === "endgame") {
-      await m.delete().catch(() => {});
-      const msg = await gameChannel.send(`${message.author} ended the UNO game.`);
-      setTimeout(() => safeDelete(msg), 3000);
-      collector.stop("ended");
-      return;
-    }
-
     // HELP
     if (cmd === "!uno" && normalize(args[1]) === "help") {
       const helpEmbed = new EmbedBuilder()
@@ -605,16 +600,20 @@ async function handleGCommand(message) {
           "**Commands:**\n" +
           "`!uno play <color> <value>` - Play a card\n" +
           "`!uno play wild <color>` - Play a Wild card\n" +
-          "`!uno play draw 4 <color>` - Play a Draw 4\n" +
+          "`!uno play draw 4 <color>` - Play a Wild Draw 4\n" +
           "`!uno draw` - Draw a card\n" +
-          "`!uno endgame` - End the current game\n\n" +
-          "**Examples:**\n" +
-          "`!uno play green 5`\n" +
-          "`!uno play red draw 2`\n" +
-          "`!uno play wild red`\n" +
-          "`!uno play draw 4 blue`"
+          "`!uno endgame` - End the current game"
         );
       await m.reply({ embeds: [helpEmbed] });
+      return;
+    }
+
+    // ENDGAME
+    if (cmd === "!uno" && normalize(args[1]) === "endgame") {
+      await m.delete().catch(() => {});
+      const msg = await gameChannel.send(`${message.author} ended the UNO game.`);
+      setTimeout(() => safeDelete(msg), 3000);
+      collector.stop("ended");
       return;
     }
 
@@ -623,9 +622,9 @@ async function handleGCommand(message) {
       const input = args.slice(2).join(" ").toLowerCase();
       let cardIndex;
 
-      // Draw 4
+      // Wild Draw 4
       if (input.startsWith("draw4") || input.startsWith("draw 4")) {
-        const colorArg = args.slice(3).join("").toLowerCase();
+        const colorArg = args.slice(3).join(" ").toLowerCase();
         cardIndex = playerHand.findIndex(c => normalize(c.value) === "draw4" || normalize(c.value) === "draw4");
         if (cardIndex === -1) {
           await m.delete().catch(() => {});
@@ -641,7 +640,7 @@ async function handleGCommand(message) {
         const played = playerHand.splice(cardIndex,1)[0];
         played.color = colorArg.charAt(0).toUpperCase() + colorArg.slice(1);
         pile.push(played);
-        botHand.push(drawCard(), drawCard(), drawCard(), drawCard());
+        for (let i=0;i<4;i++) botHand.push(drawCard());
         const msg = await gameChannel.send(`${message.author} played Draw 4! Bot draws 4 cards.`);
         setTimeout(() => safeDelete(msg),3000);
         await updateEmbed();
@@ -650,7 +649,7 @@ async function handleGCommand(message) {
 
       // Wild
       if (input.startsWith("wild")) {
-        const colorArg = args.slice(3).join("").toLowerCase();
+        const colorArg = args.slice(3).join(" ").toLowerCase();
         cardIndex = playerHand.findIndex(c => normalize(c.value) === "wild");
         if (cardIndex === -1) {
           await m.delete().catch(() => {});
@@ -677,7 +676,6 @@ async function handleGCommand(message) {
         const cStr = (c.color ? `${c.color} ${c.value}` : c.value).toLowerCase();
         return cStr === input;
       });
-
       if (cardIndex === -1) {
         await m.delete().catch(() => {});
         const warn = await gameChannel.send(`${message.author}, you don't have that card.`);
@@ -704,19 +702,14 @@ async function handleGCommand(message) {
 
       // Skip / Draw2
       if (played.value.toLowerCase() === "skip") {
-        playerTurn = true;
+        playerTurn = true; // player keeps turn
         const skipMsg = await gameChannel.send(`${message.author}, you skipped the bot's turn!`);
         setTimeout(() => skipMsg.delete().catch(() => {}), 3000);
-        await updateEmbed();
-        return;
       }
       if (played.value.toLowerCase() === "draw 2") {
-        botHand.push(drawCard(), drawCard());
+        for (let i=0;i<2;i++) botHand.push(drawCard());
         const drawMsg = await gameChannel.send(`${message.author}, bot draws 2 cards!`);
         setTimeout(() => drawMsg.delete().catch(() => {}), 3000);
-        playerTurn = true;
-        await updateEmbed();
-        return;
       }
     }
   });
@@ -727,7 +720,7 @@ async function handleGCommand(message) {
       await userRef.set({ balance }, { merge: true });
       await gameChannel.send(`${message.author}, you won! You earned $${bet*2}!`);
     } else if (winner === "bot") {
-      await gameChannel.send(`${message.author}, you lost your $${bet}. Better luck next time.`);
+      await gameChannel.send(`${message.author}, you lost your $${bet}.`);
     } else {
       await gameChannel.send(`${message.author}, UNO timed out or ended. You lost your $${bet}.`);
     }
