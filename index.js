@@ -42,10 +42,6 @@ const client = new Client({
   partials: [Partials.Channel],
 });
 
-// Prevent duplicate instances
-if (global.__botStarted) process.exit(0);
-global.__botStarted = true;
-
 // Presence
 client.once("ready", () => {
   console.log(`Logged in as ${client.user.tag}`);
