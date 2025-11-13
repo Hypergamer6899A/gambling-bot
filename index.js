@@ -497,38 +497,22 @@ case "uno": {
   await userRef.set({ balance }, { merge: true });
 
   const guild = message.guild;
-  const channelName = `uno-${message.author.username.toLowerCase()}`;
 
-  // delete any existing UNO channel for this user
+  // Delete any existing UNO game channels for this user
   const existing = guild.channels.cache.find(
-    (c) => c.name === channelName && c.parentId === UNO_CATEGORY_ID
+    (c) => c.name.startsWith(`uno-${message.author.username.toLowerCase()}`) &&
+           c.parentId === UNO_CATEGORY_ID
   );
   if (existing) await existing.delete().catch(() => null);
 
-  const gameChannel = await guild.channels.create({
-    name: channelName,
-    type: 0,
-    parent: UNO_CATEGORY_ID,
-    permissionOverwrites: [
-      { id: guild.roles.everyone.id, deny: ["ViewChannel"] },
-      { id: message.author.id, allow: ["ViewChannel", "SendMessages", "ReadMessageHistory"] },
-      { id: client.user.id, allow: ["ViewChannel", "SendMessages", "ReadMessageHistory", "ManageMessages", "EmbedLinks"] },
-    ],
-    reason: `UNO game channel for ${message.author.tag}`,
-  });
-
+  // Create private UNO channel under category
+  const gameChannel = await createPrivateChannelForGame(guild, message.author);
   await gameChannel.send(`${message.author}, this is your UNO game!`);
 
   // Initialize deck
-  const colors = ["Red", "Yellow", "Green", "Blue"];
-  const values = ["0","1","2","3","4","5","6","7","8","9","Skip","Draw 2","Reverse"];
-  const special = ["Wild","Draw 4"];
-  let deck = [];
-  for (const c of colors) for (const v of values) deck.push({ color: c, value: v });
-  for (const s of special) deck.push({ color: null, value: s });
-  deck = deck.sort(() => Math.random() - 0.5);
-
+  let deck = createFullDeck();
   const drawCard = () => deck.pop();
+
   const playerHand = [drawCard(), drawCard(), drawCard(), drawCard(), drawCard(), drawCard(), drawCard()];
   const botHand = [drawCard(), drawCard(), drawCard(), drawCard(), drawCard(), drawCard(), drawCard()];
   let pile = [drawCard()];
@@ -578,7 +562,7 @@ case "uno": {
       playerHand.push(newCard);
       await m.delete().catch(() => {});
       const notify = await gameChannel.send(`${message.author}, you drew ${formatCard(newCard)}.`);
-      setTimeout(() => notify.delete().catch(() => {}), 3000);
+      setTimeout(() => safeDelete(notify), 3000);
       await updateEmbed();
       return;
     }
@@ -626,13 +610,13 @@ case "uno": {
         if (cardIndex === -1) {
           await m.delete().catch(() => {});
           const warn = await gameChannel.send(`${message.author}, you don't have Draw 4.`);
-          setTimeout(() => warn.delete().catch(() => {}), 3000);
+          setTimeout(() => safeDelete(warn), 3000);
           return;
         }
         if (!["red","yellow","green","blue"].includes(colorArg)) {
           playerHand.push(playerHand[cardIndex]);
           const warn = await gameChannel.send(`${message.author}, specify a color after Draw 4: red, yellow, green, blue.`);
-          setTimeout(() => warn.delete().catch(() => {}), 4000);
+          setTimeout(() => safeDelete(warn), 4000);
           return;
         }
         const played = playerHand.splice(cardIndex,1)[0];
@@ -652,13 +636,13 @@ case "uno": {
         if (cardIndex === -1) {
           await m.delete().catch(() => {});
           const warn = await gameChannel.send(`${message.author}, you don't have a Wild card.`);
-          setTimeout(() => warn.delete().catch(() => {}), 3000);
+          setTimeout(() => safeDelete(warn), 3000);
           return;
         }
         if (!["red","yellow","green","blue"].includes(colorArg)) {
           playerHand.push(playerHand[cardIndex]);
           const warn = await gameChannel.send(`${message.author}, specify a color after Wild: red, yellow, green, blue.`);
-          setTimeout(() => warn.delete().catch(() => {}), 4000);
+          setTimeout(() => safeDelete(warn), 4000);
           return;
         }
         const played = playerHand.splice(cardIndex,1)[0];
@@ -679,7 +663,7 @@ case "uno": {
       if (cardIndex === -1) {
         await m.delete().catch(() => {});
         const warn = await gameChannel.send(`${message.author}, you don't have that card.`);
-        setTimeout(() => warn.delete().catch(() => {}), 3000);
+        setTimeout(() => safeDelete(warn), 3000);
         return;
       }
 
@@ -690,27 +674,28 @@ case "uno": {
         playerHand.push(played);
         await m.delete().catch(() => {});
         const warn = await gameChannel.send(`${message.author}, that card can't be played on ${formatCard(top)}.`);
-        setTimeout(() => warn.delete().catch(() => {}), 3000);
+        setTimeout(() => safeDelete(warn), 3000);
         return;
       }
 
       pile.push(played);
       await m.delete().catch(() => {});
       const notify = await gameChannel.send(`${message.author}, you played ${formatCard(played)}.`);
-      setTimeout(() => notify.delete().catch(() => {}), 3000);
+      setTimeout(() => safeDelete(notify), 3000);
       await updateEmbed();
+
       // Handle Skip / Draw2
       if (played.value.toLowerCase() === "skip") {
         playerTurn = true;
         const skipMsg = await gameChannel.send(`${message.author}, you skipped the bot's turn!`);
-        setTimeout(() => skipMsg.delete().catch(() => {}), 3000);
+        setTimeout(() => safeDelete(skipMsg), 3000);
         await updateEmbed();
         return;
       }
       if (played.value.toLowerCase() === "draw 2") {
         botHand.push(drawCard(), drawCard());
         const drawMsg = await gameChannel.send(`${message.author}, bot draws 2 cards!`);
-        setTimeout(() => drawMsg.delete().catch(() => {}), 3000);
+        setTimeout(() => safeDelete(drawMsg), 3000);
         playerTurn = true;
         await updateEmbed();
         return;
