@@ -747,7 +747,7 @@ const gameChannel = await guild.channels.create({
 
       return;
     }
-
+  }
 
 // --- Express keepalive ---
 const app = express();
