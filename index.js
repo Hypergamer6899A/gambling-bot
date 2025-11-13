@@ -515,8 +515,6 @@ if (!category) {
   console.warn(`[UNO] Category ID ${process.env.UNO_CATEGORY_ID} not found, creating channel at root.`);
 }
 
-const category = guild.channels.cache.get(process.env.UNO_CATEGORY_ID);
-
 if (!category || category.type !== 4) { // 4 = GuildCategory
   console.warn(`[UNO] Invalid or missing category ID: ${process.env.UNO_CATEGORY_ID}. Creating at root.`);
 }
