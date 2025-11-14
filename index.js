@@ -755,12 +755,29 @@ case "uno": {
       if (chosenColor) chosenColor = chosenColor.charAt(0).toUpperCase() + chosenColor.slice(1).toLowerCase();
       if (chosenValue) chosenValue = chosenValue.replace(/\b\w/g, c => c.toUpperCase());
 
-      const targetStr = chosenColor ? `${chosenColor} ${chosenValue}` : `${chosenValue}`;
-      const idx = playerHand.findIndex(c => cardToString(c).toLowerCase() === targetStr.toLowerCase());
-      if (idx === -1) { await temp(`${message.author}, you don't have ${targetStr}.`); return; }
+      // Build target search but be flexible for Wild/Draw 4 (those are stored with color === "Wild")
+      const target = chosenColor ? `${chosenColor} ${chosenValue}` : `${chosenValue}`;
+      // find index:
+      let idx = -1;
+      if (chosenValue === "Draw 4") {
+        // find a Draw 4 in hand regardless of color (Draw 4 stored as {color:"Wild", value:"Draw 4"})
+        idx = playerHand.findIndex(c => c.value === "Draw 4");
+      } else if (chosenValue === "Wild") {
+        idx = playerHand.findIndex(c => c.value === "Wild");
+      } else {
+        idx = playerHand.findIndex(c => cardToString(c).toLowerCase() === target.toLowerCase());
+      }
+
+      // if user typed color+value but the card in hand is stored as Wild (e.g. user typed "draw 4 red" or "wild red"),
+      // allow matching the hand's wild/draw4 too (defensive).
+      if (idx === -1 && (chosenValue === "Draw 4" || chosenValue === "Wild")) {
+        idx = playerHand.findIndex(c => c.value === chosenValue);
+      }
+
+      if (idx === -1) { await temp(`${message.author}, you don't have ${target}.`); return; }
 
       const card = playerHand[idx];
-      // legality
+      // legality: Draw 4 / Wild can be played anytime (here we allow Draw 4 always), others must match color or value
       if (!(card.value === "Wild" || card.value === "Draw 4" || card.color === currentColor || card.value === currentValue)) {
         await temp(`${message.author}, you can't play ${cardToString(card)} on ${currentColor} ${currentValue}.`);
         return;
