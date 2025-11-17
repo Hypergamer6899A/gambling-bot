@@ -450,15 +450,16 @@ async function handleGCommand(message) {
       return message.reply(`**Top 5 Richest Players:**\n${lines.join("\n")}`);
     }
 
-    case "blackjack": {
+case "blackjack": {
   const betAmount = parseInt(args[2]);
   if (isNaN(betAmount) || betAmount <= 0 || betAmount > balance)
     return message.reply(`${message.author}, invalid bet amount.`);
 
+  const startingBalance = balance;
   balance -= betAmount;
   await userRef.set({ balance }, { merge: true });
 
-  // Card creation helper
+  // Card system
   const suits = ["♠", "♥", "♦", "♣"];
   const values = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
 
@@ -481,7 +482,6 @@ async function handleGCommand(message) {
       else total += parseInt(v);
     }
 
-    // Soft ace → hard ace if needed
     while (total > 21 && aces > 0) {
       total -= 10;
       aces--;
@@ -490,16 +490,15 @@ async function handleGCommand(message) {
     return total;
   };
 
-  // Initial hands
+  // Hands
   let playerHand = [drawCard(), drawCard()];
   let dealerHand = [drawCard(), drawCard()];
 
   let playerTotal = getValue(playerHand);
-  let dealerTotal = getValue([dealerHand[0], "??"]); // Display mask until stand
 
-  // Buttons
+  // Buttons (Render-safe syntax)
   const makeButtons = (disabled = false) =>
-    new ActionRowBuilder().addComponents(
+    new ActionRowBuilder().addComponents([
       new ButtonBuilder()
         .setCustomId("hit")
         .setLabel("Hit")
@@ -509,8 +508,8 @@ async function handleGCommand(message) {
         .setCustomId("stand")
         .setLabel("Stand")
         .setStyle(ButtonStyle.Primary)
-        .setDisabled(disabled),
-    );
+        .setDisabled(disabled)
+    ]);
 
   const embed = (color, desc) =>
     new EmbedBuilder()
@@ -518,12 +517,13 @@ async function handleGCommand(message) {
       .setTitle(`Blackjack — Bet $${betAmount}`)
       .setDescription(desc);
 
-  // Initial message
+  // First message
   let gameMessage = await message.reply({
     embeds: [
-      embed("Grey", 
+      embed(
+        "Grey",
         `**Your Hand (${playerTotal})**\n${playerHand.join(" | ")}\n\n` +
-        `**Dealer Hand**\n${dealerHand[0]} | ??\n`
+        `**Dealer Hand**\n${dealerHand[0]} | ??`
       )
     ],
     components: [makeButtons(false)]
@@ -538,11 +538,11 @@ async function handleGCommand(message) {
 
   const updateGameMsg = async () => {
     playerTotal = getValue(playerHand);
-    dealerTotal = getValue([dealerHand[0], "??"]);
 
     await gameMessage.edit({
       embeds: [
-        embed("Grey",
+        embed(
+          "Grey",
           `**Your Hand (${playerTotal})**\n${playerHand.join(" | ")}\n\n` +
           `**Dealer Hand**\n${dealerHand[0]} | ??`
         )
@@ -553,22 +553,28 @@ async function handleGCommand(message) {
 
   collector.on("collect", async interaction => {
     if (gameOver) return interaction.deferUpdate().catch(() => {});
-    
+
     if (interaction.customId === "hit") {
       playerHand.push(drawCard());
       playerTotal = getValue(playerHand);
 
-      // Bust case
+      // Bust
       if (playerTotal > 21) {
         gameOver = true;
+
         await interaction.update({
           embeds: [
-            embed("Red",
+            embed(
+              "Red",
               `**You Busted! (${playerTotal})**\n${playerHand.join(" | ")}\n\n` +
-              `**Dealer Hand (${getValue(dealerHand)})**\n${dealerHand.join(" | ")}`)
+              `**Dealer Hand (${getValue(dealerHand)})**\n${dealerHand.join(" | ")}\n\n` +
+              `Balance Change: -$${betAmount}`
+            )
           ],
           components: [makeButtons(true)]
         });
+
+        collector.stop("finished");
         return;
       }
 
@@ -587,13 +593,12 @@ async function handleGCommand(message) {
         dealerTotalReal = getValue(dealerHand);
       }
 
-      // Determine result
+      const playerFinal = getValue(playerHand);
+      const dealerFinal = dealerTotalReal;
+
       let result;
       let color;
       let payout = 0;
-
-      const playerFinal = getValue(playerHand);
-      const dealerFinal = dealerTotalReal;
 
       if (dealerFinal > 21 || playerFinal > dealerFinal) {
         result = "You Win!";
@@ -602,24 +607,26 @@ async function handleGCommand(message) {
       } else if (playerFinal < dealerFinal) {
         result = "You Lose.";
         color = "Red";
+        payout = 0;
       } else {
         result = "Tie.";
         color = "Yellow";
-        payout = betAmount; // return original bet
+        payout = betAmount;
       }
 
-      if (payout > 0) {
-        balance += payout;
-        await userRef.set({ balance }, { merge: true });
-      }
+      if (payout > 0) balance += payout;
+      await userRef.set({ balance }, { merge: true });
+
+      const net = balance - startingBalance;
 
       await gameMessage.edit({
         embeds: [
-          embed(color,
+          embed(
+            color,
             `**${result}**\n\n` +
             `**Your Hand (${playerFinal})**\n${playerHand.join(" | ")}\n\n` +
             `**Dealer Hand (${dealerFinal})**\n${dealerHand.join(" | ")}\n\n` +
-            `Balance Change: $${payout - betAmount}`
+            `Balance Change: $${net}`
           )
         ],
         components: [makeButtons(true)]
@@ -640,6 +647,7 @@ async function handleGCommand(message) {
 
   break;
 }
+
 
 
     case "gift": {
