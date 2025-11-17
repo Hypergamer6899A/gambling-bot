@@ -448,16 +448,196 @@ async function handleGCommand(message) {
     }
 
     case "blackjack": {
-      const betAmount = parseInt(args[2]);
-      if (isNaN(betAmount) || betAmount <= 0 || betAmount > balance) return message.reply(`${message.author}, invalid bet amount.`);
-      balance -= betAmount;
-      await userRef.set({ balance }, { merge: true });
+  const betAmount = parseInt(args[2]);
+  if (isNaN(betAmount) || betAmount <= 0 || betAmount > balance)
+    return message.reply(`${message.author}, invalid bet amount.`);
 
-      // simplified blackjack: reuse your existing logic (kept minimal here)
-      // For brevity, keep current working implementation from your prior version
-      // (omitted full code duplication - you can re-add your detailed blackjack block if desired)
-      return message.reply(`${message.author}, blackjack not implemented in this build. (You still paid $${betAmount}.)`);
+  balance -= betAmount;
+  await userRef.set({ balance }, { merge: true });
+
+  // Card creation helper
+  const suits = ["♠", "♥", "♦", "♣"];
+  const values = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+
+  const drawCard = () => {
+    const v = values[Math.floor(Math.random() * values.length)];
+    const s = suits[Math.floor(Math.random() * suits.length)];
+    return `${v}${s}`;
+  };
+
+  const getValue = (hand) => {
+    let total = 0;
+    let aces = 0;
+
+    for (const card of hand) {
+      let v = card.slice(0, card.length - 1);
+      if (v === "A") {
+        aces++;
+        total += 11;
+      } else if (["J","Q","K"].includes(v)) total += 10;
+      else total += parseInt(v);
     }
+
+    // Soft ace → hard ace if needed
+    while (total > 21 && aces > 0) {
+      total -= 10;
+      aces--;
+    }
+
+    return total;
+  };
+
+  // Initial hands
+  let playerHand = [drawCard(), drawCard()];
+  let dealerHand = [drawCard(), drawCard()];
+
+  let playerTotal = getValue(playerHand);
+  let dealerTotal = getValue([dealerHand[0], "??"]); // Display mask until stand
+
+  // Buttons
+  const makeButtons = (disabled = false) =>
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("hit")
+        .setLabel("Hit")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(disabled),
+      new ButtonBuilder()
+        .setCustomId("stand")
+        .setLabel("Stand")
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(disabled),
+    );
+
+  const embed = (color, desc) =>
+    new EmbedBuilder()
+      .setColor(color)
+      .setTitle(`Blackjack — Bet $${betAmount}`)
+      .setDescription(desc);
+
+  // Initial message
+  let gameMessage = await message.reply({
+    embeds: [
+      embed("Grey", 
+        `**Your Hand (${playerTotal})**\n${playerHand.join(" | ")}\n\n` +
+        `**Dealer Hand**\n${dealerHand[0]} | ??\n`
+      )
+    ],
+    components: [makeButtons(false)]
+  });
+
+  const collector = gameMessage.createMessageComponentCollector({
+    filter: i => i.user.id === message.author.id,
+    time: 60000
+  });
+
+  let gameOver = false;
+
+  const updateGameMsg = async () => {
+    playerTotal = getValue(playerHand);
+    dealerTotal = getValue([dealerHand[0], "??"]);
+
+    await gameMessage.edit({
+      embeds: [
+        embed("Grey",
+          `**Your Hand (${playerTotal})**\n${playerHand.join(" | ")}\n\n` +
+          `**Dealer Hand**\n${dealerHand[0]} | ??`
+        )
+      ],
+      components: [makeButtons(false)]
+    });
+  };
+
+  collector.on("collect", async interaction => {
+    if (gameOver) return interaction.deferUpdate().catch(() => {});
+    
+    if (interaction.customId === "hit") {
+      playerHand.push(drawCard());
+      playerTotal = getValue(playerHand);
+
+      // Bust case
+      if (playerTotal > 21) {
+        gameOver = true;
+        await interaction.update({
+          embeds: [
+            embed("Red",
+              `**You Busted! (${playerTotal})**\n${playerHand.join(" | ")}\n\n` +
+              `**Dealer Hand (${getValue(dealerHand)})**\n${dealerHand.join(" | ")}`)
+          ],
+          components: [makeButtons(true)]
+        });
+        return;
+      }
+
+      await interaction.deferUpdate();
+      await updateGameMsg();
+    }
+
+    if (interaction.customId === "stand") {
+      gameOver = true;
+      await interaction.deferUpdate();
+
+      // Dealer draws until ≥ 17
+      let dealerTotalReal = getValue(dealerHand);
+      while (dealerTotalReal < 17) {
+        dealerHand.push(drawCard());
+        dealerTotalReal = getValue(dealerHand);
+      }
+
+      // Determine result
+      let result;
+      let color;
+      let payout = 0;
+
+      const playerFinal = getValue(playerHand);
+      const dealerFinal = dealerTotalReal;
+
+      if (dealerFinal > 21 || playerFinal > dealerFinal) {
+        result = "You Win!";
+        color = "Green";
+        payout = betAmount * 2;
+      } else if (playerFinal < dealerFinal) {
+        result = "You Lose.";
+        color = "Red";
+      } else {
+        result = "Tie.";
+        color = "Yellow";
+        payout = betAmount; // return original bet
+      }
+
+      if (payout > 0) {
+        balance += payout;
+        await userRef.set({ balance }, { merge: true });
+      }
+
+      await gameMessage.edit({
+        embeds: [
+          embed(color,
+            `**${result}**\n\n` +
+            `**Your Hand (${playerFinal})**\n${playerHand.join(" | ")}\n\n` +
+            `**Dealer Hand (${dealerFinal})**\n${dealerHand.join(" | ")}\n\n` +
+            `Balance Change: $${payout - betAmount}`
+          )
+        ],
+        components: [makeButtons(true)]
+      });
+
+      collector.stop("finished");
+    }
+  });
+
+  collector.on("end", (_, reason) => {
+    if (!gameOver && reason !== "finished") {
+      gameMessage.edit({
+        embeds: [embed("Red", "Game ended due to inactivity.")],
+        components: [makeButtons(true)]
+      }).catch(() => {});
+    }
+  });
+
+  break;
+}
+
 
     case "gift": {
       const target = message.mentions.users.first();
