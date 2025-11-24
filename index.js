@@ -300,7 +300,7 @@ async function handleGCommand(message) {
           "`!g claim` - Claim $100 when broke (every 24h)\n" +
           "`!g gift @user <amount|all>` - Gift money to another player\n" +
           "`!g leaderboard` - Show top 5 richest players\n" +
-          "`!g uno <bet>` - Start single-player UNO vs bot (creates private channel)"
+          "`!g uno <bet> <easy|medium|hard>` - Start single-player UNO vs bot at the requested difficulty (creates private channel)"
       );
 
     case "balance":
