@@ -789,71 +789,73 @@ case "uno": {
   }
 
   // bot logic (handles immediate repeats when skip/reverse effect gives bot extra turn)
-  async function botPlayLoop() {
-    // allow multiple immediate bot plays if skip/reverse forces it
-    let extra = true;
-    // guard to avoid infinite loops: limit to 6 immediate actions
-    let loopLimit = 6;
-    while (extra && loopLimit-- > 0) {
-      extra = false;
-      await new Promise(r => setTimeout(r, 700));
-      ensureDeck();
-      // find playable
-      const idx = botHand.findIndex(canPlayOn);
-      if (idx === -1) {
-        // draw one and stop (player's turn next)
-        drawInto(botHand, 1);
-        await temp("🤖 Bot drew a card.");
-        playerTurn = true;
-        await statusMsg.edit({ embeds: [makeEmbed()] });
-        return;
-      }
+async function botPlayLoop() {
+  let extra = true;
+  let loopLimit = 6;
 
-      const played = botHand.splice(idx,1)[0];
-      pile.push(played);
-      // choose color for wilds
-      if (played.value === "Wild" || played.value === "Draw 4") {
-        const counts = { Red:0, Yellow:0, Green:0, Blue:0 };
-        for (const c of botHand) if (c.color && counts[c.color] !== undefined) counts[c.color]++;
-        currentColor = Object.keys(counts).reduce((a,b) => counts[a] >= counts[b] ? a : b);
-      } else {
-        currentColor = played.color;
-      }
-      currentValue = played.value;
+  while (extra && loopLimit-- > 0) {
+    extra = false;
+    await new Promise(r => setTimeout(r, 700));
+    ensureDeck();
 
-      let actionText = `🤖 Bot played **${cardToString(played)}**.`;
-      // effects
-      if (played.value === "Draw 2") {
-        drawInto(playerHand, 2);
-        actionText += ` You draw 2 cards.`;
-        playerTurn = true; // player resumes (bot's draw2 doesn't let bot play again)
-      } else if (played.value === "Draw 4") {
-        drawInto(playerHand, 4);
-        actionText += ` You draw 4 cards.`;
-        playerTurn = true;
-      } else if (played.value === "Skip" || played.value === "Reverse") {
-        // skip player's turn -> bot goes again immediately
-        actionText += ` Your turn is skipped!`;
-        playerTurn = false;
-        extra = true;
-      } else {
-        playerTurn = true;
-      }
+    const idx = botHand.findIndex(canPlayOn);
 
-      await temp(actionText);
+    if (idx === -1) {
+      drawInto(botHand, 1);
+      await temp("🤖 Bot drew a card.");
+      playerTurn = true; // player's turn next
       await statusMsg.edit({ embeds: [makeEmbed()] });
-
-      // win check
-      if (botHand.length === 0) {
-        winner = "bot";
-        // stop loop and collector will handle end
-        return;
-      }
+      return;
     }
-    // if we exit extra loop and no extra, ensure playerTurn true
-    if (!playerTurn) playerTurn = true;
+
+    const played = botHand.splice(idx, 1)[0];
+    pile.push(played);
+
+    // choose color for wilds
+    if (played.value === "Wild" || played.value === "Draw 4") {
+      const counts = { Red:0, Yellow:0, Green:0, Blue:0 };
+      for (const c of botHand) if (c.color && counts[c.color] !== undefined) counts[c.color]++;
+      currentColor = Object.keys(counts).reduce((a,b) => counts[a] >= counts[b] ? a : b);
+    } else {
+      currentColor = played.color;
+    }
+    currentValue = played.value;
+
+    let actionText = `🤖 Bot played **${cardToString(played)}**.`;
+
+    // Effects: bot +2/+4/skip/reverse forces bot to play again
+    if (played.value === "Draw 2") {
+      drawInto(playerHand, 2);
+      actionText += ` You draw 2 cards. Bot plays again.`;
+      extra = true;
+      playerTurn = false;
+    } else if (played.value === "Draw 4") {
+      drawInto(playerHand, 4);
+      actionText += ` You draw 4 cards. Bot plays again.`;
+      extra = true;
+      playerTurn = false;
+    } else if (played.value === "Skip" || played.value === "Reverse") {
+      actionText += ` Your turn is skipped. Bot plays again.`;
+      extra = true;
+      playerTurn = false;
+    } else {
+      playerTurn = true;
+    }
+
+    await temp(actionText);
     await statusMsg.edit({ embeds: [makeEmbed()] });
+
+    // Win check
+    if (botHand.length === 0) {
+      winner = "bot";
+      return;
+    }
   }
+
+  if (!playerTurn) playerTurn = true;
+  await statusMsg.edit({ embeds: [makeEmbed()] });
+}
+
 
   // collector inside game channel for player's !uno commands
   const filter = m => m.author.id === message.author.id && m.content.toLowerCase().startsWith("!uno");
@@ -994,12 +996,12 @@ case "uno": {
       // effects for player's play
       if (card.value === "Draw 2") {
         drawInto(botHand, 2);
-        await temp("Bot draws 2 cards and skips its play.");
+        await temp("Bot draws 2 cards.");
         // per requested behavior: draw cards skip the bot's turn -> player keeps the turn
         playerTurn = true;
       } else if (card.value === "Draw 4") {
         drawInto(botHand, 4);
-        await temp("Bot draws 4 cards and skips its play.");
+        await temp("Bot draws 4 cards.");
         playerTurn = true;
       } else if (card.value === "Skip" || card.value === "Reverse") {
         // Reverse acts as skip in 1v1: player keeps turn again
