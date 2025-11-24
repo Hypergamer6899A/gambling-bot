@@ -54,18 +54,6 @@ client.once("ready", () => {
   });
 });
 
-// Converts { color, value } → readable name
-export function shortHandString(card) {
-  if (!card) return "Unknown Card";
-
-  if (card.color === "wild") {
-    if (card.value === "draw4") return "Wild Draw 4";
-    return "Wild";
-  }
-
-  return `${card.color} ${card.value}`;
-}
-
 // Fisher–Yates shuffle
 export function shuffle(array) {
   for (let i = array.length - 1; i > 0; i--) {
