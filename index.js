@@ -776,7 +776,7 @@ case "uno": {
       `**Bot Cards:** ${botHand.length}\n` +
       `**Turn:** ${playerTurn ? "Your move" : "Bot's move"}`
     )
-    .setFooter({ text: `Channel: ${channelName}` });
+    .setFooter({ text: `Use "!uno help" for a list of commands` });
 
   const statusMsg = await gameChannel.send({ content: `${message.author}`, embeds: [makeEmbed()] });
 
