@@ -790,8 +790,16 @@ case "uno": {
 
   // bot logic (handles immediate repeats when skip/reverse effect gives bot extra turn)
 async function botPlayLoop() {
+
+  // HARD STOP: bot already won, do nothing
+  if (winner === "bot" || botHand.length === 0) {
+    winner = "bot";
+    return;
+  }
+
   let extra = true;
   let loopLimit = 6;
+
 
   while (extra && loopLimit-- > 0) {
     extra = false;
@@ -845,11 +853,13 @@ async function botPlayLoop() {
     await temp(actionText);
     await statusMsg.edit({ embeds: [makeEmbed()] });
 
-    // Win check
-    if (botHand.length === 0) {
-      winner = "bot";
-      return;
-    }
+    // Win check (stop immediately)
+if (botHand.length === 0) {
+  winner = "bot";
+  await statusMsg.edit({ embeds: [makeEmbed()] }).catch(()=>{});
+  return;
+}
+
   }
 
   if (!playerTurn) playerTurn = true;
@@ -908,7 +918,7 @@ async function botPlayLoop() {
       playerTurn = false;
       await statusMsg.edit({ embeds: [makeEmbed()] });
       // bot turn
-      return botPlayLoop();
+      if (!winner) return botPlayLoop();
     }
 
     // PLAY
@@ -1023,7 +1033,7 @@ async function botPlayLoop() {
 
       if (!playerTurn) {
         // bot gets to play
-        return botPlayLoop();
+        if (!winner) return botPlayLoop();
       }
       return;
     }
