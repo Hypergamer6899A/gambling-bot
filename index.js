@@ -873,6 +873,7 @@ if (botHand.length === 0) {
 
   collector.on("collect", async m => {
     // try react but never block
+    if (winner) return;
     if (THINKING_EMOJI) m.react(THINKING_EMOJI).catch(()=>{});
     const parts = m.content.trim().split(/\s+/).slice(1).map(p => p.toLowerCase());
     m.delete().catch(()=>{});
