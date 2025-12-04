@@ -394,18 +394,26 @@ async function handleGCommand(message) {
   await userRef.set({ username: message.author.username, balance, lastClaim }, { merge: true });
 
   switch (cmd) {
-    case "help":
-      return message.reply(
-        "**Available Commands:**\n" +
-          "`!g help` - Show this help menu\n" +
-          "`!g balance` - Check your balance\n" +
-          "`!g roulette <red|black|odd|even> <amount>` - Bet on roulette\n" +
-          "`!g blackjack <amount>` - Play blackjack\n" +
-          "`!g claim` - Claim $100 when broke (every 24h)\n" +
-          "`!g gift @user <amount|all>` - Gift money to another player\n" +
-          "`!g leaderboard` - Show top 5 richest players\n" +
-          "`!g uno <bet>` - Start single-player UNO vs bot (creates private channel)"
-      );
+    case "help": {
+  const helpMsg = await message.reply(
+    "**Available Commands:**\n" +
+      "`!g help` - Show this help menu\n" +
+      "`!g balance` - Check your balance\n" +
+      "`!g roulette <red|black|odd|even> <amount>` - Bet on roulette\n" +
+      "`!g blackjack <amount>` - Play blackjack\n" +
+      "`!g claim` - Claim $100 when broke (every 24h)\n" +
+      "`!g gift @user <amount|all>` - Gift money to another player\n" +
+      "`!g leaderboard` - Show top 5 richest players\n" +
+      "`!g uno <bet>` - Start single-player UNO vs bot (creates private channel)"
+  );
+
+  setTimeout(() => {
+    helpMsg.delete().catch(()=>{});
+  }, 30000);
+
+  break;
+}
+
 
     case "balance":
       return message.reply(`${message.author}, your balance is **$${balance}**.`);
