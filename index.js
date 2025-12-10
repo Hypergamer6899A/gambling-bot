@@ -458,7 +458,7 @@ async function handleGCommand(message) {
       return message.reply(`**Top 5 Richest Players:**\n${lines.join("\n")}`);
     }
 
-case "blackjack": {
+      case "blackjack": {
   const betAmount = parseInt(args[2]);
   if (isNaN(betAmount) || betAmount <= 0 || betAmount > balance)
     return message.reply(`${message.author}, invalid bet amount.`);
@@ -466,6 +466,11 @@ case "blackjack": {
   const startingBalance = balance;
   balance -= betAmount;
   await userRef.set({ balance }, { merge: true });
+
+  // Load blackjack win streak
+  const streakRef = userRef.collection("stats").doc("blackjack");
+  let streakSnap = await streakRef.get();
+  let streak = streakSnap.exists ? streakSnap.data().streak || 0 : 0;
 
   // Card system
   const suits = ["♠", "♥", "♦", "♣"];
@@ -504,7 +509,7 @@ case "blackjack": {
 
   let playerTotal = getValue(playerHand);
 
-  // Buttons (Render-safe syntax)
+  // Buttons
   const makeButtons = (disabled = false) =>
     new ActionRowBuilder().addComponents([
       new ButtonBuilder()
@@ -570,13 +575,17 @@ case "blackjack": {
       if (playerTotal > 21) {
         gameOver = true;
 
+        // Reset streak on loss
+        streak = 0;
+        await streakRef.set({ streak }, { merge: true });
+
         await interaction.update({
           embeds: [
             embed(
               "Red",
               `**You Busted! (${playerTotal})**\n${playerHand.join(" | ")}\n\n` +
               `**Dealer Hand (${getValue(dealerHand)})**\n${dealerHand.join(" | ")}\n\n` +
-              `Balance Change: -$${betAmount}`
+              `Balance Change: -$${betAmount}\nWin Streak: ${streak}`
             )
           ],
           components: [makeButtons(true)]
@@ -594,15 +603,46 @@ case "blackjack": {
       gameOver = true;
       await interaction.deferUpdate();
 
-      // Dealer draws until ≥ 17
-      let dealerTotalReal = getValue(dealerHand);
-      while (dealerTotalReal < 17) {
-        dealerHand.push(drawCard());
-        dealerTotalReal = getValue(dealerHand);
-      }
+      // Difficulty based on streak (0 = fair, 10 = full goblin)
+      const difficulty = Math.min(1 + streak * 0.15, 3.5);
 
-      const playerFinal = getValue(playerHand);
-      const dealerFinal = dealerTotalReal;
+      // Cheating dealer card draw
+      const drawDealerCard = (targetScore) => {
+        const weightedPool = [];
+        const dealerScore = getValue(dealerHand);
+
+        for (const v of values) {
+          let val = v === "A" ? 11 : (["J","Q","K"].includes(v) ? 10 : parseInt(v));
+          const diff = targetScore - dealerScore;
+
+          let weight = 1;
+
+          if (streak === 0) {
+            weight = 1; // fair play
+          } else {
+            if (val <= diff) weight = Math.round(3 * difficulty);
+            else if (val - diff <= 3) weight = Math.round(2 * difficulty);
+            else weight = 1;
+          }
+
+          for (let i = 0; i < weight; i++) weightedPool.push(v);
+        }
+
+        const v = weightedPool[Math.floor(Math.random() * weightedPool.length)];
+        const s = suits[Math.floor(Math.random() * suits.length)];
+        return `${v}${s}`;
+      };
+
+      // Dealer logic: draw until beating player or busting
+      let playerFinal = getValue(playerHand);
+      let dealerFinal = getValue(dealerHand);
+
+      while (dealerFinal <= playerFinal && dealerFinal <= 21) {
+        const card = streak === 0 ? drawCard() : drawDealerCard(playerFinal);
+        dealerHand.push(card);
+        dealerFinal = getValue(dealerHand);
+        if (dealerFinal > 21) break;
+      }
 
       let result;
       let color;
@@ -612,20 +652,27 @@ case "blackjack": {
         result = "You Win!";
         color = "Green";
         payout = betAmount * 2;
+
+        streak += 1; // Increase streak on win
       } else if (playerFinal < dealerFinal) {
         result = "You Lose.";
         color = "Red";
-        payout = 0;
+
+        streak = 0; // Reset on loss
       } else {
         result = "Tie.";
         color = "Yellow";
         payout = betAmount;
+
+        // Tie does not change streak
       }
 
       if (payout > 0) balance += payout;
       await userRef.set({ balance }, { merge: true });
 
       const net = balance - startingBalance;
+
+      await streakRef.set({ streak }, { merge: true });
 
       await gameMessage.edit({
         embeds: [
@@ -634,7 +681,7 @@ case "blackjack": {
             `**${result}**\n\n` +
             `**Your Hand (${playerFinal})**\n${playerHand.join(" | ")}\n\n` +
             `**Dealer Hand (${dealerFinal})**\n${dealerHand.join(" | ")}\n\n` +
-            `Balance Change: $${net}`
+            `Balance Change: $${net}\nWin Streak: ${streak}`
           )
         ],
         components: [makeButtons(true)]
@@ -655,6 +702,7 @@ case "blackjack": {
 
   break;
 }
+
 
 
 
