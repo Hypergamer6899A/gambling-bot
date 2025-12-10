@@ -458,252 +458,194 @@ async function handleGCommand(message) {
       return message.reply(`**Top 5 Richest Players:**\n${lines.join("\n")}`);
     }
 
-      case "blackjack": {
+    case "blackjack": {
   const betAmount = parseInt(args[2]);
   if (isNaN(betAmount) || betAmount <= 0 || betAmount > balance)
     return message.reply(`${message.author}, invalid bet amount.`);
 
-  const startingBalance = balance;
   balance -= betAmount;
   await userRef.set({ balance }, { merge: true });
 
-  // Load blackjack win streak
-  const streakRef = userRef.collection("stats").doc("blackjack");
-  let streakSnap = await streakRef.get();
-  let streak = streakSnap.exists ? streakSnap.data().streak || 0 : 0;
-
-  // Card system
+  // --- CARD SETUP ---
   const suits = ["♠", "♥", "♦", "♣"];
-  const values = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+  const values = [
+    "A", "2", "3", "4", "5", "6",
+    "7", "8", "9", "10", "J", "Q", "K"
+  ];
 
-  const drawCard = () => {
-    const v = values[Math.floor(Math.random() * values.length)];
-    const s = suits[Math.floor(Math.random() * suits.length)];
-    return `${v}${s}`;
-  };
+  const deck = [];
+  for (const suit of suits) {
+    for (const value of values) {
+      deck.push({ value, suit });
+    }
+  }
 
-  const getValue = (hand) => {
+  function drawCard() {
+    return deck.splice(Math.floor(Math.random() * deck.length), 1)[0];
+  }
+
+  function calculate(hand) {
     let total = 0;
     let aces = 0;
 
     for (const card of hand) {
-      let v = card.slice(0, card.length - 1);
-      if (v === "A") {
-        aces++;
+      if (["J", "Q", "K"].includes(card.value)) total += 10;
+      else if (card.value === "A") {
         total += 11;
-      } else if (["J","Q","K"].includes(v)) total += 10;
-      else total += parseInt(v);
+        aces++;
+      } else total += parseInt(card.value);
     }
 
     while (total > 21 && aces > 0) {
       total -= 10;
       aces--;
     }
-
     return total;
-  };
+  }
 
-  // Hands
-  let playerHand = [drawCard(), drawCard()];
-  let dealerHand = [drawCard(), drawCard()];
+  // --- 🔥 LOAD / SAVE STREAK ---
+  const statsRef = db.collection("users")
+    .doc(message.author.id)
+    .collection("stats")
+    .doc("blackjack");
 
-  let playerTotal = getValue(playerHand);
+  const statsSnap = await statsRef.get();
+  let streak = statsSnap.exists ? statsSnap.data().streak || 0 : 0;
 
-  // Buttons
-  const makeButtons = (disabled = false) =>
-    new ActionRowBuilder().addComponents([
-      new ButtonBuilder()
-        .setCustomId("hit")
-        .setLabel("Hit")
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(disabled),
-      new ButtonBuilder()
-        .setCustomId("stand")
-        .setLabel("Stand")
-        .setStyle(ButtonStyle.Primary)
-        .setDisabled(disabled)
-    ]);
+  async function saveStreak(newStreak) {
+    await statsRef.set({ streak: newStreak }, { merge: true });
+  }
 
-  const embed = (color, desc) =>
-    new EmbedBuilder()
-      .setColor(color)
-      .setTitle(`Blackjack — Bet $${betAmount}`)
-      .setDescription(desc);
+  // --- CHEATING LOGIC ---
+  // cheatingLevel = 0 when streak = 0
+  // cheatingLevel = 10 when streak >= 10
+  const cheatingLevel = Math.min(streak, 10);
+  const dealerBias = cheatingLevel / 10;
 
-  // First message
-  let gameMessage = await message.reply({
-    embeds: [
-      embed(
-        "Grey",
-        `**Your Hand (${playerTotal})**\n${playerHand.join(" | ")}\n\n` +
-        `**Dealer Hand**\n${dealerHand[0]} | ??`
-      )
-    ],
-    components: [makeButtons(false)]
+  // Dealer sometimes draws better cards than random
+  function biasedDrawCard() {
+    if (Math.random() > dealerBias) return drawCard(); // fair draw
+
+    const goodCards = deck.filter(c => ["10", "J", "Q", "K", "A"].includes(c.value));
+    if (goodCards.length === 0) return drawCard();
+
+    const idx = deck.indexOf(goodCards[Math.floor(Math.random() * goodCards.length)]);
+    return deck.splice(idx, 1)[0];
+  }
+
+  // --- INITIAL HANDS ---
+  const playerHand = [drawCard(), drawCard()];
+  const dealerHand = [biasedDrawCard(), biasedDrawCard()];
+
+  let playerTotal = calculate(playerHand);
+  let dealerTotal = calculate(dealerHand);
+
+  // EMBED HELPER
+  function buildEmbed(showDealerHole = false) {
+    return new EmbedBuilder()
+      .setColor("Green")
+      .setTitle("🎰 Blackjack")
+      .addFields(
+        {
+          name: "Your Hand",
+          value: `${playerHand.map(c => `${c.value}${c.suit}`).join(" ")} = **${playerTotal}**`,
+          inline: false,
+        },
+        {
+          name: "Dealer Hand",
+          value: showDealerHole
+            ? `${dealerHand.map(c => `${c.value}${c.suit}`).join(" ")} = **${dealerTotal}**`
+            : `${dealerHand[0].value}${dealerHand[0].suit} [Hidden]`,
+          inline: false,
+        },
+        {
+          name: "Current Streak",
+          value: streak.toString(),
+          inline: false,
+        }
+      );
+  }
+
+  // SEND INITIAL EMBED
+  const gameMessage = await message.reply({
+    embeds: [buildEmbed(false)],
   });
 
-  const collector = gameMessage.createMessageComponentCollector({
-    filter: i => i.user.id === message.author.id,
-    time: 60000
+  // --- GAME LOOP ---
+  const filter = (m) =>
+    m.author.id === message.author.id &&
+    ["hit", "stand", "h", "s"].includes(m.content.toLowerCase());
+
+  const collector = message.channel.createMessageCollector({ filter, time: 60000 });
+
+  collector.on("collect", async (msg) => {
+    const input = msg.content.toLowerCase();
+
+    if (["hit", "h"].includes(input)) {
+      playerHand.push(drawCard());
+      playerTotal = calculate(playerHand);
+
+      if (playerTotal > 21) {
+        collector.stop("bust");
+      } else {
+        await gameMessage.edit({ embeds: [buildEmbed(false)] });
+      }
+    }
+
+    if (["stand", "s"].includes(input)) {
+      collector.stop("stand");
+    }
   });
 
-  let gameOver = false;
+  collector.on("end", async (_, reason) => {
+    if (reason === "time") {
+      return gameMessage.edit("Game timed out.");
+    }
 
-  const updateGameMsg = async () => {
-    playerTotal = getValue(playerHand);
+    // Dealer draws until >= 17
+    while (dealerTotal < 17 && reason !== "bust") {
+      dealerHand.push(biasedDrawCard());
+      dealerTotal = calculate(dealerHand);
+    }
+
+    let result = "";
+    let winnings = 0;
+
+    if (reason === "bust") {
+      result = "You busted! Dealer wins.";
+      streak = 0;
+    } else if (dealerTotal > 21) {
+      result = "Dealer busts! You win!";
+      winnings = betAmount * 2;
+      balance += winnings;
+      streak++;
+    } else if (playerTotal > dealerTotal) {
+      result = "You win!";
+      winnings = betAmount * 2;
+      balance += winnings;
+      streak++;
+    } else if (playerTotal < dealerTotal) {
+      result = "Dealer wins.";
+      streak = 0;
+    } else {
+      result = "It's a tie!";
+      balance += betAmount;
+    }
+
+    await userRef.set({ balance }, { merge: true });
+    await saveStreak(streak);
 
     await gameMessage.edit({
       embeds: [
-        embed(
-          "Grey",
-          `**Your Hand (${playerTotal})**\n${playerHand.join(" | ")}\n\n` +
-          `**Dealer Hand**\n${dealerHand[0]} | ??`
-        )
+        buildEmbed(true).setFooter({
+          text: `${result}   |   New Streak: ${streak}`,
+        }),
       ],
-      components: [makeButtons(false)]
     });
-  };
-
-  collector.on("collect", async interaction => {
-    if (gameOver) return interaction.deferUpdate().catch(() => {});
-
-    if (interaction.customId === "hit") {
-      playerHand.push(drawCard());
-      playerTotal = getValue(playerHand);
-
-      // Bust
-      if (playerTotal > 21) {
-        gameOver = true;
-
-        // Reset streak on loss
-        streak = 0;
-        await streakRef.set({ streak }, { merge: true });
-
-        await interaction.update({
-          embeds: [
-            embed(
-              "Red",
-              `**You Busted! (${playerTotal})**\n${playerHand.join(" | ")}\n\n` +
-              `**Dealer Hand (${getValue(dealerHand)})**\n${dealerHand.join(" | ")}\n\n` +
-              `Balance Change: -$${betAmount}\nWin Streak: ${streak}`
-            )
-          ],
-          components: [makeButtons(true)]
-        });
-
-        collector.stop("finished");
-        return;
-      }
-
-      await interaction.deferUpdate();
-      await updateGameMsg();
-    }
-
-    if (interaction.customId === "stand") {
-      gameOver = true;
-      await interaction.deferUpdate();
-
-      // Difficulty based on streak (0 = fair, 10 = full goblin)
-      const difficulty = Math.min(1 + streak * 0.15, 3.5);
-
-      // Cheating dealer card draw
-      const drawDealerCard = (targetScore) => {
-        const weightedPool = [];
-        const dealerScore = getValue(dealerHand);
-
-        for (const v of values) {
-          let val = v === "A" ? 11 : (["J","Q","K"].includes(v) ? 10 : parseInt(v));
-          const diff = targetScore - dealerScore;
-
-          let weight = 1;
-
-          if (streak === 0) {
-            weight = 1; // fair play
-          } else {
-            if (val <= diff) weight = Math.round(3 * difficulty);
-            else if (val - diff <= 3) weight = Math.round(2 * difficulty);
-            else weight = 1;
-          }
-
-          for (let i = 0; i < weight; i++) weightedPool.push(v);
-        }
-
-        const v = weightedPool[Math.floor(Math.random() * weightedPool.length)];
-        const s = suits[Math.floor(Math.random() * suits.length)];
-        return `${v}${s}`;
-      };
-
-      // Dealer logic: draw until beating player or busting
-      let playerFinal = getValue(playerHand);
-      let dealerFinal = getValue(dealerHand);
-
-      while (dealerFinal <= playerFinal && dealerFinal <= 21) {
-        const card = streak === 0 ? drawCard() : drawDealerCard(playerFinal);
-        dealerHand.push(card);
-        dealerFinal = getValue(dealerHand);
-        if (dealerFinal > 21) break;
-      }
-
-      let result;
-      let color;
-      let payout = 0;
-
-      if (dealerFinal > 21 || playerFinal > dealerFinal) {
-        result = "You Win!";
-        color = "Green";
-        payout = betAmount * 2;
-
-        streak += 1; // Increase streak on win
-      } else if (playerFinal < dealerFinal) {
-        result = "You Lose.";
-        color = "Red";
-
-        streak = 0; // Reset on loss
-      } else {
-        result = "Tie.";
-        color = "Yellow";
-        payout = betAmount;
-
-        // Tie does not change streak
-      }
-
-      if (payout > 0) balance += payout;
-      await userRef.set({ balance }, { merge: true });
-
-      const net = balance - startingBalance;
-
-      await streakRef.set({ streak }, { merge: true });
-
-      await gameMessage.edit({
-        embeds: [
-          embed(
-            color,
-            `**${result}**\n\n` +
-            `**Your Hand (${playerFinal})**\n${playerHand.join(" | ")}\n\n` +
-            `**Dealer Hand (${dealerFinal})**\n${dealerHand.join(" | ")}\n\n` +
-            `Balance Change: $${net}\nWin Streak: ${streak}`
-          )
-        ],
-        components: [makeButtons(true)]
-      });
-
-      collector.stop("finished");
-    }
-  });
-
-  collector.on("end", (_, reason) => {
-    if (!gameOver && reason !== "finished") {
-      gameMessage.edit({
-        embeds: [embed("Red", "Game ended due to inactivity.")],
-        components: [makeButtons(true)]
-      }).catch(() => {});
-    }
   });
 
   break;
 }
-
-
 
 
     case "gift": {
