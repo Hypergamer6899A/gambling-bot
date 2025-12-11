@@ -1,5 +1,5 @@
-import { getUser, saveUser } from "/../services/userCache.js";
-import { rouletteEmbed } from "/../utils/rouletteEmbed.js";
+import { getUser, saveUser } from "../services/userCache.js";
+import { rouletteEmbed } from "../utils/rouletteEmbed.js";
 
 export async function rouletteCommand(client, message, args) {
   const choice = args[2]?.toLowerCase();
