@@ -1,6 +1,6 @@
 import { createDeck } from "./deck.js";
 import { cardToString, canPlayOn } from "./format.js";
-import { shuffle } from "../utils/shuffle.js";
+import { shuffle } from "../../utils/shuffle.js";
 
 export function newGameState(bet) {
   let deck = createDeck();
