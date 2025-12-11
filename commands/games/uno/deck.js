@@ -1,4 +1,4 @@
-import { shuffle } from "/../utils/shuffle.js";
+import { shuffle } from "../utils/shuffle.js";
 
 const COLORS = ["Red", "Yellow", "Green", "Blue"];
 const VALUES = ["0","1","2","3","4","5","6","7","8","9","Skip","Reverse","Draw 2"];
