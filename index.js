@@ -54,6 +54,41 @@ client.once("ready", () => {
   });
 });
 
+async function updateTopThreeRole(message, db) {
+  const guild = message.guild;
+  if (!guild) return;
+  const roleId = process.env.ROLE_ID;
+  if (!roleId) return;
+  const role = guild.roles.cache.get(roleId);
+  if (!role) return;
+  const usersRef = db.collection("users");
+  const snapshot = await usersRef.get();
+  if (snapshot.empty) return;
+  const players = [];
+  snapshot.forEach(doc => {
+    const data = doc.data();
+    players.push({ id: doc.id, balance: data.balance || 0 });
+  });
+  players.sort((a, b) => b.balance - a.balance);
+  const top3 = players.slice(0, 3).map(u => u.id);
+  // Make sure members are cached
+  await guild.members.fetch();
+  // Remove role from anyone NOT in top 3
+  for (const [id, member] of guild.members.cache) {
+    if (member.roles.cache.has(roleId) && !top3.includes(id)) {
+      await member.roles.remove(roleId).catch(() => {});
+    }
+  }
+
+  // Add role to each top 3 member
+  for (const id of top3) {
+    const member = guild.members.cache.get(id);
+    if (member && !member.roles.cache.has(roleId)) {
+      await member.roles.add(roleId).catch(() => {});
+    }
+  }
+}
+
 // Processed message guard
 const processedMessages = new Set();
 
@@ -448,15 +483,39 @@ async function handleGCommand(message) {
     }
 
     case "leaderboard": {
-      const snapshot = await db.collection("users").orderBy("balance", "desc").get();
-      const top5 = snapshot.docs.slice(0, 5);
-      const lines = await Promise.all(top5.map(async (d, i) => {
-        const u = d.data();
-        const user = await client.users.fetch(d.id).catch(() => null);
-        return `${i + 1}. ${user?.username || "Unknown"} - $${u.balance}`;
-      }));
-      return message.reply(`**Top 5 Richest Players:**\n${lines.join("\n")}`);
+  const usersRef = db.collection("users");
+  const snapshot = await usersRef.get();
+  if (snapshot.empty) {
+    return message.reply("No players found.");
+  }
+  const players = [];
+  snapshot.forEach(doc => {
+    const data = doc.data();
+    players.push({
+      id: doc.id,
+      balance: data.balance || 0
+    });
+  });
+  players.sort((a, b) => b.balance - a.balance);
+  const topFive = players.slice(0, 5);
+  const lines = [];
+  for (let i = 0; i < topFive.length; i++) {
+    const p = topFive[i];
+    let username = "Unknown User";
+    try {
+      const user = await message.client.users.fetch(p.id);
+      username = user.username;
+    } catch {
+      username = "Unknown User";
     }
+    lines.push(
+      `**${i + 1}.** ${username} — $${p.balance.toLocaleString()}`
+    );
+  }
+  return message.reply(
+    "**Top 5 Richest Players**\n" + lines.join("\n")
+  );
+}
 
 case "blackjack": {
   const betAmount = parseInt(args[2]);
@@ -1132,6 +1191,8 @@ if (botHand.length === 0) {
 }
   }
 }
+await updateTopThreeRole(message, db);
+
 // --- Express keepalive ---
 const app = express();
 app.get("/", (_, res) => res.send("Bot is running."));
