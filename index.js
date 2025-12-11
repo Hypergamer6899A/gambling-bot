@@ -14,20 +14,23 @@ const client = new Client({
   partials: [Partials.Channel]
 });
 
-// Presence
-client.once("ready", () => {
+// Presence & startup tasks
+client.once("ready", async () => {
   console.log(`Logged in as ${client.user.tag}`);
   client.user.setPresence({
     activities: [{ name: "!g help | LETS GO GAMBLING" }],
     status: "online"
   });
+
+  // Run role update immediately on startup
+  await updateTopThreeRole(client);
+
+  // Then repeat every 5 minutes
+  setInterval(() => updateTopThreeRole(client), 5 * 60 * 1000);
 });
 
 // Route messages
 client.on("messageCreate", msg => messageRouter(client, msg));
-
-// Top 3 role update every 5 minutes
-setInterval(() => updateTopThreeRole(client), 300000);
 
 // Keepalive
 const app = express();
