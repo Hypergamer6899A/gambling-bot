@@ -1,3 +1,4 @@
+import { startUnoCollector } from "../uno/collector.js";
 import { newGameState } from "../../games/uno/engine.js";
 import { saveGame } from "../../games/uno/state.js";
 import { createUnoChannel } from "../../utils/channel.js";
