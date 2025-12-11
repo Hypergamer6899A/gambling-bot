@@ -1,4 +1,4 @@
-import { getUser } from "../../services/userCache.js";
+import { getUser } from "../services/userCache.js";
 import { EmbedBuilder } from "discord.js";
 
 export async function balanceCommand(client, message) {
