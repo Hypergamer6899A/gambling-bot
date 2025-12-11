@@ -1,8 +1,8 @@
-import { canPlayOn, cardToString } from "../../games/uno/format.js";
-import { playCard, drawInto, isWinning } from "../../games/uno/engine.js";
-import { botTurn } from "../../games/uno/botAI.js";
-import { temp } from "../../utils/tempMessage.js";
-import { saveGame } from "../../games/uno/state.js";
+import { canPlayOn, cardToString } from "../games/uno/format.js";
+import { playCard, drawInto, isWinning } from "../games/uno/engine.js";
+import { botTurn } from "../games/uno/botAI.js";
+import { temp } from "../utils/tempMessage.js";
+import { saveGame } from "../games/uno/state.js";
 
 export async function playHandler(client, msg, state, args) {
   const channel = msg.channel;
