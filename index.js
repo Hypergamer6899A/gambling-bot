@@ -1189,8 +1189,8 @@ if (botHand.length === 0) {
 
   break;
 }
+      await updateTopThreeRole(message, db);
   }
-  await updateTopThreeRole(message, db);
 }
 
 // --- Express keepalive ---
