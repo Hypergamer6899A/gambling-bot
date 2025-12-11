@@ -1,10 +1,11 @@
-import { unoStart } from "../commands/g/unoStart.js";
-import { blackjackCommand } from "../commands/g/blackjack.js";
-import { rouletteCommand } from "../commands/g/roulette.js";
-import { leaderboardCommand } from "../commands/g/leaderboard.js";
-import { balanceCommand } from "../commands/g/balance.js";
-import { giftCommand } from "../commands/g/gift.js";
-import { helpCommand } from "../commands/g/help.js";
+import { unoStart } from "../../commands/g/unoStart.js";
+import { blackjackCommand } from "../../commands/g/blackjack.js";
+import { rouletteCommand } from "../../commands/g/roulette.js";
+import { leaderboardCommand } from "../../commands/g/leaderboard.js";
+import { balanceCommand } from "../../commands/g/balance.js";
+import { giftCommand } from "../../commands/g/gift.js";
+import { helpCommand } from "../../commands/g/help.js";
+
 
 // UNO subcommands (if needed in future)
 import { startUnoCollector } from "../commands/uno/collector.js";
