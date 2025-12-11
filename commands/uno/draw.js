@@ -1,6 +1,6 @@
-import { drawInto } from "../../games/uno/engine.js";
-import { botTurn } from "../../games/uno/botAI.js";
-import { temp } from "../../utils/tempMessage.js";
+import { drawInto } from "../games/uno/engine.js";
+import { botTurn } from "../games/uno/botAI.js";
+import { temp } from "../utils/tempMessage.js";
 
 export async function drawHandler(client, msg, state) {
   const channel = msg.channel;
