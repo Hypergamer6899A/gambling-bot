@@ -1,3 +1,4 @@
+// commands/games/uno/state.js
 // In-memory game storage
 const games = new Map();
 
@@ -11,11 +12,11 @@ export async function saveGame(userId, state) {
 }
 
 /**
- * Get a game state
+ * Load a game state
  * @param {string} userId - Discord user ID
  * @returns {object|null} - The game state or null if not found
  */
-export async function getGame(userId) {
+export async function loadGame(userId) {
   return games.get(userId) || null;
 }
 
