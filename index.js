@@ -622,7 +622,7 @@ case "blackjack": {
               "Red",
               `**You Busted! (${playerTotal})**\n${playerHand.join(" | ")}\n\n` +
               `**Dealer Hand (${getValue(dealerHand)})**\n${dealerHand.join(" | ")}\n\n` +
-              `Balance Change: -$${betAmount}\nWin Streak: ${streak}`
+              `Balance: $${balance}\nWin Streak: ${streak}`
             )
           ],
           components: [makeButtons(true)]
@@ -690,7 +690,7 @@ case "blackjack": {
             `**${result}**\n\n` +
             `**Your Hand (${playerFinal})**\n${playerHand.join(" | ")}\n\n` +
             `**Dealer Hand (${dealerFinal})**\n${dealerHand.join(" | ")}\n\n` +
-            `Balance Change: $${net}\nWin Streak: ${streak}`
+            `Balance: $${balance}\nWin Streak: ${streak}`
           )
         ],
         components: [makeButtons(true)]
@@ -970,7 +970,7 @@ if (botHand.length === 0) {
     // ENDGAME
     if (sub === "endgame") {
       winner = "bot";
-      await gameChannel.send(`${message.author}, you ended the game and lost your $${bet}.`).catch(()=>{});
+      await gameChannel.send(`${message.author}, you ended the game and lost your $${bet}.\nBalance: **$${balance}**`).catch(()=>{});
       collector.stop("ended");
       return;
     }
@@ -1114,12 +1114,12 @@ if (botHand.length === 0) {
         const uDoc = await uRef.get();
         const prev = uDoc.exists ? uDoc.data().balance ?? 0 : 0;
         await uRef.set({ balance: prev + bet * 2 }, { merge: true });
-        await gameChannel.send(`${message.author}, you won! You earned $${bet * 2}!`).catch(()=>{});
+        await gameChannel.send(`${message.author}, you won! You earned $${bet * 2}!\nBalance: **$${balance}**`).catch(()=>{});
       } else if (winner === "bot") {
-        await gameChannel.send(`${message.author}, bot won — you lost your $${bet}.`).catch(()=>{});
+        await gameChannel.send(`${message.author}, bot won — you lost your $${bet}.\nBalance: **$${balance}**`).catch(()=>{});
       } else {
         // timeout or ended by user
-        await gameChannel.send(`${message.author}, UNO ended. You lost your $${bet}.`).catch(()=>{});
+        await gameChannel.send(`${message.author}, UNO ended. You lost your $${bet}.\nBalance: **$${balance}**`).catch(()=>{});
       }
     } catch (e) {
       console.error("UNO end cleanup error", e);
