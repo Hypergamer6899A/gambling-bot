@@ -8,7 +8,7 @@ import { helpCommand } from "../../commands/g/help.js";
 
 
 // UNO subcommands (if needed in future)
-import { startUnoCollector } from "../commands/uno/collector.js";
+import { startUnoCollector } from "../../commands/uno/collector.js";
 
 const PREFIX = "!g";
 const UNO_PREFIX = "!uno";
