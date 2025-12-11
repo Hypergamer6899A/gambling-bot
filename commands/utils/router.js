@@ -2,6 +2,12 @@ import { unoStart } from "../commands/g/unoStart.js";
 import { blackjackCommand } from "../commands/g/blackjack.js";
 import { rouletteCommand } from "../commands/g/roulette.js";
 import { leaderboardCommand } from "../commands/g/leaderboard.js";
+import { balanceCommand } from "../commands/g/balance.js";
+import { giftCommand } from "../commands/g/gift.js";
+import { helpCommand } from "../commands/g/help.js";
+import { rouletteCommand } from "../commands/g/roulette.js";
+import { leaderboardCommand } from "../commands/g/leaderboard.js";
+
 
 // UNO subcommands
 import { startUnoCollector } from "../commands/uno/collector.js";
@@ -38,6 +44,21 @@ export function messageRouter(client, message) {
       return rouletteCommand(client, message, args);
 
     case "leaderboard":
+      return leaderboardCommand(client, message, args);
+      
+    case "balance": 
+      return balanceCommand(client, message);
+      
+    case "gift": 
+      return giftCommand(client, message, args);
+      
+    case "help": 
+      return helpCommand(client, message);
+      
+    case "roulette":
+      return rouletteCommand(client, message, args);
+      
+    case "leaderboard": 
       return leaderboardCommand(client, message, args);
 
     default:
