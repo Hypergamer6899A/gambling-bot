@@ -1,4 +1,4 @@
-import { deleteGame } from "../../games/uno/state.js";
+import { deleteGame } from "../games/uno/state.js";
 
 export async function endgameHandler(client, msg, state, collector) {
   const channel = msg.channel;
