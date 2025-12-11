@@ -1,6 +1,6 @@
-import { newBlackjackGame, playerHit, dealerDraw } from "../../games/blackjack/engine.js";
-import { bjEmbed } from "../../utils/bjEmbed.js";
-import { getUser, saveUser } from "../../services/userCache.js";
+import { newBlackjackGame, playerHit, dealerDraw } from "/../games/blackjack/engine.js";
+import { bjEmbed } from "/../utils/bjEmbed.js";
+import { getUser, saveUser } from "/../services/userCache.js";
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 
 export async function blackjackCommand(client, message, args) {
