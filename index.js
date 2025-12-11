@@ -1188,10 +1188,14 @@ if (botHand.length === 0) {
   });
 
   break;
-}
-      await updateTopThreeRole(message, db);
-  }
-}
+}   // END OF case "uno"
+
+// --- RUN TOP 3 ROLE UPDATE (correct place) ---
+await updateTopThreeRole(message, db);
+
+}   // END OF switch(cmd)
+}   // END OF client.on("messageCreate")
+
 
 // --- Express keepalive ---
 const app = express();
