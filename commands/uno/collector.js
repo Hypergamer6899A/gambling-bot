@@ -1,10 +1,10 @@
-import { loadGame, saveGame, deleteGame } from "../../games/uno/state.js";
+import { loadGame, saveGame, deleteGame } from "../games/uno/state.js";
 import { playHandler } from "./play.js";
 import { drawHandler } from "./draw.js";
 import { endgameHandler } from "./endgame.js";
 import { helpHandler } from "./help.js";
-import { unoEmbed } from "../../utils/unoEmbed.js";
-import { temp } from "../../utils/tempMessage.js";
+import { unoEmbed } from "../utils/unoEmbed.js";
+import { temp } from "../utils/tempMessage.js";
 
 export function startUnoCollector(client, channel, userId) {
   const filter = (m) =>
