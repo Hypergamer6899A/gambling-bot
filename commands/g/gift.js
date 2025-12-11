@@ -1,4 +1,4 @@
-import { getUser, saveUser } from "../../services/userCache.js";
+import { getUser, saveUser } from "/../services/userCache.js";
 
 export async function giftCommand(client, message, args) {
   const target = message.mentions.users.first();
