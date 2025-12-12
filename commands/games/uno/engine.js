@@ -45,6 +45,21 @@ export function ensureDeck(state) {
     state.pile = [top];
   }
 }
+// role advantage: reduces bot optimality by a percent chance
+// used when picking which bot card to play
+export function maybeSoftenBotPlay(cardOptions, hasBoost) {
+  if (!hasBoost || cardOptions.length <= 1) return cardOptions[0];
+
+  const BOOST = 0.12; // 12% chance bot picks a worse card
+
+  // Best card is index 0 (assuming your bot sorts best first)
+  if (Math.random() < BOOST) {
+    // pick a random *other* option
+    return cardOptions[Math.floor(Math.random() * cardOptions.length)];
+  }
+
+  return cardOptions[0];
+}
 
 export function playCard(state, hand, index, chosenColor = null) {
   const card = hand[index];
