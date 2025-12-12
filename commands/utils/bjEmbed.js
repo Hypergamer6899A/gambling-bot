@@ -1,6 +1,6 @@
 import { EmbedBuilder } from "discord.js";
 
-export function bjEmbed(title, bet, playerHand, dealerHand, playerTotal, dealerTotal, streak, color = "Grey") {
+export function bjEmbed(title, bet, balance, playerHand, dealerHand, playerTotal, dealerTotal, streak, color = "Grey") {
   return new EmbedBuilder()
     .setColor(color)
     .setTitle(`${title} — Bet $${bet}`)
