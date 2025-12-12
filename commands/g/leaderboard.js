@@ -19,11 +19,11 @@ export async function leaderboardCommand(client, message) {
     let display;
 
     try {
-      const member = await guild.members.fetch(doc.id);
-      display = member.user.tag;
+      // Try to fetch user to confirm they're actually in the guild
+      await guild.members.fetch(doc.id);
+      display = `<@${doc.id}>`;                    // Mention
     } catch {
-      // User not in guild or unreachable
-      display = doc.id;
+      display = `<@${doc.id}>`;                    // Mention anyway (safe fallback)
     }
 
     text += `**${rank}.** ${display} — $${data.balance}\n`;
