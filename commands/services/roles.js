@@ -2,10 +2,14 @@ import { getFirestore } from "firebase-admin/firestore";
 
 const db = getFirestore();
 const ROLE_ID = process.env.ROLE_ID;
+const GUILD_ID = process.env.GUILD_ID;
 
 export async function updateTopThreeRole(client) {
-  const guild = client.guilds.cache.first();
+  const guild = await client.guilds.fetch(GUILD_ID).catch(() => null);
   if (!guild) return;
+
+  // Ensure full member list is loaded
+  await guild.members.fetch();
 
   const usersSnapshot = await db.collection("users")
     .orderBy("balance", "desc")
@@ -17,16 +21,13 @@ export async function updateTopThreeRole(client) {
   const role = guild.roles.cache.get(ROLE_ID);
   if (!role) return;
 
-  // fetch all members to avoid partial cache issues
-  const members = await guild.members.fetch();
+  guild.members.cache.forEach(member => {
+    const isTopThree = topThreeIds.includes(member.id);
 
-  members.forEach(member => {
-    if (topThreeIds.includes(member.id)) {
-      if (!member.roles.cache.has(role.id))
-        member.roles.add(role).catch(() => {});
-    } else {
-      if (member.roles.cache.has(role.id))
-        member.roles.remove(role).catch(() => {});
+    if (isTopThree && !member.roles.cache.has(role.id)) {
+      member.roles.add(role).catch(() => {});
+    } else if (!isTopThree && member.roles.cache.has(role.id)) {
+      member.roles.remove(role).catch(() => {});
     }
   });
 }
