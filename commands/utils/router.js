@@ -7,6 +7,8 @@ import { giftCommand } from "../g/gift.js";
 import { helpCommand } from "../g/help.js";
 import { claimCommand } from "../g/claim.js";
 
+import { unoCommand } from "../g/uno.js";
+
 const PREFIX = "!g";
 const UNO_PREFIX = "!uno";
 
