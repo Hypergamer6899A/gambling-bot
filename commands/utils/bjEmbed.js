@@ -1,3 +1,5 @@
+import { EmbedBuilder } from "discord.js";
+
 export function bjEmbed(
   title,
   bet,
