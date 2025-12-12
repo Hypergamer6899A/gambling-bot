@@ -1,7 +1,7 @@
-import { createUnoChannel } from "../utils/channel.js";
-import { unoEmbed } from "../utils/unoEmbed.js";
-import { createGame, getGame } from "../games/uno/state.js";
-import { startUnoCollector } from "../collectors/unoCollector.js";
+import { createUnoChannel } from "utils/channel.js";
+import { unoEmbed } from "utils/unoEmbed.js";
+import { createGame, getGame } from "games/uno/state.js";
+import { startUnoCollector } from "collectors/unoCollector.js";
 
 export async function unoCommand(client, message, args) {
   const bet = Number(args[0]);
