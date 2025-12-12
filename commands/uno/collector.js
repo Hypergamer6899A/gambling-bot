@@ -2,37 +2,50 @@ import { processGame } from "../utils/house.js";
 import { getUser, saveUser } from "../services/userCache.js";
 import { deleteGame, loadGame } from "../games/uno/state.js";
 
-collector.on("end", async (collected, reason) => {
-  const state = await loadGame(userId);
-  if (!state) return;
+export function startUnoCollector(client, channel, userId) {
+  const filter = (m) => m.author.id === userId && m.content.toLowerCase().startsWith("!uno");
 
-  const channel = await client.channels.fetch(state.channelId);
-  const playerId = state.userId;
+  const collector = channel.createMessageCollector({ filter, time: 10 * 60 * 1000 });
 
-  if (state.winner === "player") {
-    const user = await getUser(playerId);
-    const prize = state.bet * 2;
+  collector.on("collect", async (msg) => {
+    // Your existing play/draw logic goes here if needed
+    msg.delete().catch(() => {});
+  });
 
-    user.balance += prize;
-    await saveUser(playerId, user);
+  collector.on("end", async (collected, reason) => {
+    const state = await loadGame(userId);
+    if (!state) return;
 
-    // House loses payout
-    await processGame(prize);
+    const channel = await client.channels.fetch(state.channelId);
+    const playerId = state.userId;
 
-    channel.send(`${channel.guild.members.cache.get(playerId)}, you won $${prize}!`).catch(() => {});
-  } else {
-    // Either bot wins or timeout: house gains the bet
-    await processGame(-state.bet);
+    if (state.winner === "player") {
+      const user = await getUser(playerId);
+      const prize = state.bet * 2;
 
-    const msg =
-      state.winner === "bot"
-        ? `bot won — you lost $${state.bet}.`
-        : `UNO ended. You lost $${state.bet}.`;
+      user.balance += prize;
+      await saveUser(playerId, user);
 
-    channel.send(`${channel.guild.members.cache.get(playerId)}, ${msg}`).catch(() => {});
-  }
+      // House loses payout
+      await processGame(prize);
 
-  await deleteGame(playerId);
+      channel.send(`${channel.guild.members.cache.get(playerId)}, you won $${prize}!`).catch(() => {});
+    } else {
+      // Either bot wins or timeout: house gains the bet
+      await processGame(-state.bet);
 
-  setTimeout(() => channel.delete().catch(() => {}), 4000);
-});
+      const msg =
+        state.winner === "bot"
+          ? `bot won — you lost $${state.bet}.`
+          : `UNO ended. You lost $${state.bet}.`;
+
+      channel.send(`${channel.guild.members.cache.get(playerId)}, ${msg}`).catch(() => {});
+    }
+
+    await deleteGame(playerId);
+
+    setTimeout(() => channel.delete().catch(() => {}), 4000);
+  });
+
+  return collector;
+}
