@@ -56,9 +56,9 @@ export async function rouletteCommand(client, message, args) {
   if (win) {
     payout = bet * 2;
     user.balance += payout;
-    processGame(payout); // player wins, house loses
+    await processGame(payout); // house loses
   } else {
-    processGame(-bet); // player loses, house gains
+    await processGame(-bet); // house gains
   }
 
   await saveUser(message.author.id, user);
