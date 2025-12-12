@@ -8,8 +8,8 @@ export async function updateTopThreeRole(client) {
   const guild = await client.guilds.fetch(GUILD_ID).catch(() => null);
   if (!guild) return;
 
-  // Ensure full member list is loaded
-  await guild.members.fetch();
+  const role = guild.roles.cache.get(ROLE_ID);
+  if (!role) return;
 
   const usersSnapshot = await db.collection("users")
     .orderBy("balance", "desc")
@@ -18,15 +18,19 @@ export async function updateTopThreeRole(client) {
 
   const topThreeIds = usersSnapshot.docs.map(doc => doc.id);
 
-  const role = guild.roles.cache.get(ROLE_ID);
-  if (!role) return;
+  for (const id of topThreeIds) {
+    try {
+      // fetch member directly by ID
+      const member = await guild.members.fetch(id).catch(() => null);
+      if (member && !member.roles.cache.has(role.id)) {
+        await member.roles.add(role).catch(() => {});
+      }
+    } catch {}
+  }
 
+  // Now remove role from anyone who is NOT top three
   guild.members.cache.forEach(member => {
-    const isTopThree = topThreeIds.includes(member.id);
-
-    if (isTopThree && !member.roles.cache.has(role.id)) {
-      member.roles.add(role).catch(() => {});
-    } else if (!isTopThree && member.roles.cache.has(role.id)) {
+    if (!topThreeIds.includes(member.id) && member.roles.cache.has(role.id)) {
       member.roles.remove(role).catch(() => {});
     }
   });
