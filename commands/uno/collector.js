@@ -1,4 +1,4 @@
-import { processGame } from "../../utils/house.js";
+import { processGame } from "../utils/house.js";
 
 collector.on("end", async (collected, reason) => {
   let state = await loadGame(userId);
