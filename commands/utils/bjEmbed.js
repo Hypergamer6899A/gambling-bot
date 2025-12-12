@@ -8,6 +8,6 @@ export function bjEmbed(title, bet, playerHand, dealerHand, playerTotal, dealerT
       `**Your Hand (${playerTotal})**\n${playerHand.join(" | ")}\n\n` +
       `**Dealer Hand (${dealerTotal ?? "??"})**\n` +
       (dealerTotal === null ? `${dealerHand[0]} | ??` : dealerHand.join(" | ")) +
-      `\n\nBalance: **$${balance}**\nWin Streak: ${streak}`
+      `\n\nBalance: **${balance}**\nWin Streak: ${streak}`
     );
 }
