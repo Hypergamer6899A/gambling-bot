@@ -6,28 +6,17 @@ import { giftCommand } from "../g/gift.js";
 import { helpCommand } from "../g/help.js";
 import { claimCommand } from "../g/claim.js";
 
-import { unoCommand } from "../g/uno.js";
-
-const PREFIX = "!g";
-const UNO_PREFIX = "!uno";
-
 export function messageRouter(client, message) {
   if (message.author.bot) return;
 
   const content = message.content.trim();
 
-  // UNO sub-commands
-  if (content.toLowerCase().startsWith(UNO_PREFIX)) {
-    return; // handled inside UNO collector
-  }
 
   if (!content.toLowerCase().startsWith(PREFIX)) return;
 
   const args = content.split(/\s+/);
   const cmd = args[1]?.toLowerCase();
 
-  switch (cmd) {
-    case "uno":
       return unoCommand(client, message, args);
     case "blackjack":
       return blackjackCommand(client, message, args);
