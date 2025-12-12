@@ -22,21 +22,20 @@ export function playerHit(state) {
 
   if (state.playerTotal > 21) {
     state.gameOver = true;
-    processGame(-state.bet); // player busts, house gains
+    await processGame(-state.bet); // player busts, house gains
     return { result: "bust" };
   }
 
   return { result: "continue" };
 }
 
-export function dealerDraw(state) {
+export async function dealerDraw(state) {
   const target = state.playerTotal;
   let dealerTotal = handValue(state.dealerHand);
 
   const SPECIAL_ROLE = process.env.ROLE_ID;
   const hasBoost = state.member?.roles?.cache?.has(SPECIAL_ROLE) || false;
   const BOOST = 0.10;
-
   const difficulty = Math.min(1 + state.streak * 0.15, 3.5);
   const values = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
   const suits = ["♠","♥","♦","♣"];
@@ -68,9 +67,10 @@ export function dealerDraw(state) {
     }
     state.dealerHand.push(card);
     dealerTotal = handValue(state.dealerHand);
+
     if (dealerTotal > 21) {
       state.dealerTotal = dealerTotal;
-      processGame(state.bet); // dealer busts, player wins
+      await processGame(state.bet); // dealer busts, player wins
       return "dealer_bust";
     }
   }
@@ -78,12 +78,13 @@ export function dealerDraw(state) {
   state.dealerTotal = dealerTotal;
 
   if (dealerTotal > target) {
-    processGame(-state.bet); // dealer wins, house gains
+    await processGame(-state.bet); // dealer wins, house gains
     return "dealer_win";
   }
   if (dealerTotal < target) {
-    processGame(state.bet); // player wins, house loses
+    await processGame(state.bet); // player wins, house loses
     return "player_win";
   }
+
   return "tie"; // no balance change
 }
