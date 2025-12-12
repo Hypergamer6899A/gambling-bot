@@ -1,6 +1,6 @@
-import { processGame } from "../utils/house.js";
 import { getUser, saveUser } from "../services/userCache.js";
 import { deleteGame, loadGame } from "../games/uno/state.js";
+import { processGame } from "../utils/house.js";
 
 export function startUnoCollector(client, channel, userId) {
   const filter = (m) =>
@@ -9,29 +9,21 @@ export function startUnoCollector(client, channel, userId) {
 
   const collector = channel.createMessageCollector({
     filter,
-    time: 10 * 60 * 1000,
+    time: 10 * 60 * 1000
   });
 
   collector.on("collect", async (msg) => {
-    try {
-      // First process the UNO turn
-      await processGameCommand(msg);
-
-      // Then delete the message after allowing the game to react
-      setTimeout(() => msg.delete().catch(() => {}), 750);
-    } catch (err) {
-      console.error("UNO command error:", err);
-    }
+    msg.delete().catch(() => {});
+    // NOTHING ELSE GOES HERE — play.js handles actual moves
   });
 
   collector.on("end", async (collected, reason) => {
     const state = await loadGame(userId);
     if (!state) return;
 
-    const channel = await client.channels.fetch(state.channelId);
+    const gameChannel = await client.channels.fetch(state.channelId);
     const playerId = state.userId;
 
-    // The usual payout/winner logic
     if (state.winner === "player") {
       const user = await getUser(playerId);
       const prize = state.bet * 2;
@@ -40,23 +32,19 @@ export function startUnoCollector(client, channel, userId) {
       await saveUser(playerId, user);
       await processGame(prize);
 
-      channel
-        .send(`${channel.guild.members.cache.get(playerId)}, you won $${prize}!`)
-        .catch(() => {});
+      gameChannel.send(`${gameChannel.guild.members.cache.get(playerId)}, you won $${prize}!`).catch(() => {});
     } else {
       const msg =
         state.winner === "bot"
           ? `bot won — you lost $${state.bet}.`
           : `UNO ended. You lost $${state.bet}.`;
 
-      channel
-        .send(`${channel.guild.members.cache.get(playerId)}, ${msg}`)
-        .catch(() => {});
+      gameChannel.send(`${gameChannel.guild.members.cache.get(playerId)}, ${msg}`).catch(() => {});
     }
 
     await deleteGame(playerId);
 
-    setTimeout(() => channel.delete().catch(() => {}), 4000);
+    setTimeout(() => gameChannel.delete().catch(() => {}), 4000);
   });
 
   return collector;
