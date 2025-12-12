@@ -31,8 +31,6 @@ export function startUnoCollector(client, channel, userId) {
 
       channel.send(`${channel.guild.members.cache.get(playerId)}, you won $${prize}!`).catch(() => {});
     } else {
-      // Either bot wins or timeout: house gains the bet
-      await processGame(-state.bet);
 
       const msg =
         state.winner === "bot"
