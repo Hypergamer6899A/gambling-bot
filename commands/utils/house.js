@@ -1,33 +1,45 @@
-// src/commands/utils/house.js
-const BOT_ID = process.env.BOT_ID;
+import { getUser, saveUser } from "../services/userCache.js";
 
-// In-memory balance (adjust starting house money as needed)
-let balance = 100000;
+const BOT_ID = process.env.BOT_ID;
+const BOT_NAME = "Gambler"; // name for the house
+const STARTING_BALANCE = 100000;
 
 /**
- * Get the bot's current balance
- * @returns {number}
+ * Ensure the house exists in the DB/cache
+ * @returns {Promise<object>} the house user object
  */
-export function getBalance() {
-  return balance;
+export async function getHouse() {
+  let house = await getUser(BOT_ID);
+
+  if (!house) {
+    house = {
+      id: BOT_ID,
+      name: BOT_NAME,
+      balance: STARTING_BALANCE,
+      // add any other user properties your system uses
+    };
+    await saveUser(BOT_ID, house);
+  }
+
+  return house;
 }
 
 /**
- * Adjust the bot's balance
+ * Adjust the house balance
  * @param {number} amount - positive to add, negative to subtract
  */
-export function updateBalance(amount) {
-  balance += amount;
-  return balance;
+export async function updateHouse(amount) {
+  const house = await getHouse();
+  house.balance += amount;
+  await saveUser(BOT_ID, house);
+  return house.balance;
 }
 
 /**
  * Process a player's win/loss
  * @param {number} playerAmount - positive if player wins, negative if loses
- * Updates house balance inversely
  */
-export function processGame(playerAmount) {
+export async function processGame(playerAmount) {
   // Player wins = negative for house
-  updateBalance(-playerAmount);
-  return getBalance();
+  await updateHouse(-playerAmount);
 }
