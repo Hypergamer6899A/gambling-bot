@@ -1,32 +1,33 @@
 import { getFirestore } from "firebase-admin/firestore";
-import { EmbedBuilder } from "discord.js";
 
-export async function leaderboardCommand(client, message) {
-  const db = getFirestore();
+const db = getFirestore();
+const ROLE_ID = process.env.ROLE_ID;
+const GUILD_ID = process.env.GUILD_ID;
 
-  const users = await db.collection("users")
+export async function updateTopThreeRole(client) {
+  const guild = await client.guilds.fetch(GUILD_ID).catch(() => null);
+  if (!guild) return;
+
+  // Ensure full member list is loaded
+  await guild.members.fetch();
+
+  const usersSnapshot = await db.collection("users")
     .orderBy("balance", "desc")
-    .limit(10)
+    .limit(3)
     .get();
 
-  let text = "";
-  let rank = 1;
+  const topThreeIds = usersSnapshot.docs.map(doc => doc.id);
 
-  users.forEach(doc => {
-    const data = doc.data();
-    const userTag = message.guild.members.cache.get(doc.id);
-    const display = userTag ? userTag.user.tag : doc.id;
+  const role = guild.roles.cache.get(ROLE_ID);
+  if (!role) return;
 
-    text += `**${rank}.** ${display} — $${data.balance}\n`;
-    rank++;
-  });
+  guild.members.cache.forEach(member => {
+    const isTopThree = topThreeIds.includes(member.id);
 
-  return message.reply({
-    embeds: [
-      new EmbedBuilder()
-        .setColor("Green")
-        .setTitle("Leaderboard — Top Balances")
-        .setDescription(text || "No users found.")
-    ]
+    if (isTopThree && !member.roles.cache.has(role.id)) {
+      member.roles.add(role).catch(() => {});
+    } else if (!isTopThree && member.roles.cache.has(role.id)) {
+      member.roles.remove(role).catch(() => {});
+    }
   });
 }
