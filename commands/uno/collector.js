@@ -13,8 +13,6 @@ export function startUnoCollector(client, channel, userId) {
   });
 
   collector.on("collect", async (msg) => {
-    msg.delete().catch(() => {});
-    // NOTHING ELSE GOES HERE — play.js handles actual moves
   });
 
   collector.on("end", async (collected, reason) => {
