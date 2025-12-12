@@ -5,6 +5,7 @@ import { leaderboardCommand } from "../g/leaderboard.js";
 import { balanceCommand } from "../g/balance.js";
 import { giftCommand } from "../g/gift.js";
 import { helpCommand } from "../g/help.js";
+import { claimCommand } from "../g/claim.js";
 
 // UNO subcommands
 import { startUnoCollector } from "../uno/collector.js";
@@ -40,6 +41,8 @@ export function messageRouter(client, message) {
       return balanceCommand(client, message);
     case "gift":
       return giftCommand(client, message, args);
+    case "claim": // <- new case
+      return claimCommand(client, message);
     case "help":
       return helpCommand(client, message);
     default:
