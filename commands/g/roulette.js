@@ -6,7 +6,7 @@ export async function rouletteCommand(client, message, args) {
   const bet = parseInt(args[3]);
 
   if (!["red", "black", "odd", "even"].includes(choice))
-    return message.reply("Usage: `!g roulette <red|black|odd|even> <amount>`");
+    return message.reply("Usage: `!g roulette <red|black|even|odd> <amount>`");
 
   if (isNaN(bet) || bet <= 0)
     return message.reply("Enter a valid bet amount.");
@@ -18,8 +18,44 @@ export async function rouletteCommand(client, message, args) {
   // Deduct temporary
   user.balance -= bet;
 
-  // Spin
-  const roll = Math.floor(Math.random() * 37);
+  // Detect if the user has the premium role
+  const SPECIAL_ROLE = process.env.ROLE_ID;
+  const hasBoost = message.member.roles.cache.has(SPECIAL_ROLE);
+
+  // Boost strength: 0.0 to 1.0
+  // 0.12 = 12 percent better odds
+  const BOOST = 0.12;
+
+  // Spin the wheel as normal
+  let roll = Math.floor(Math.random() * 37);
+
+  // If boosted, reroll once and take the result more favorable to the player
+  if (hasBoost) {
+    const altRoll = Math.floor(Math.random() * 37);
+
+    // Check which roll is better for the user's chosen bet
+    const isRed = n => [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36].includes(n);
+    const colorOf = n => (n === 0 ? "Green" : (isRed(n) ? "Red" : "Black"));
+    const odd = n => n % 2 === 1;
+    const even = n => n % 2 === 0 && n !== 0;
+
+    function favorsChoice(number) {
+      if (choice === "red") return colorOf(number) === "Red";
+      if (choice === "black") return colorOf(number) === "Black";
+      if (choice === "odd") return odd(number);
+      if (choice === "even") return even(number);
+      return false;
+    }
+
+    // Weighted advantage:
+    // If altRoll favors their choice and a probability gate passes,
+    // take the alt roll instead of the original.
+    if (favorsChoice(altRoll) && Math.random() < BOOST) {
+      roll = altRoll;
+    }
+  }
+
+  // Interpret final roll
   const isRed = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36].includes(roll);
   const color = roll === 0 ? "Green" : (isRed ? "Red" : "Black");
 
@@ -51,4 +87,3 @@ export async function rouletteCommand(client, message, args) {
     )]
   });
 }
-
