@@ -16,7 +16,7 @@ export async function claimCommand(client, message) {
   const twentyFourHours = 24 * 60 * 60 * 1000;
 
   if (user.balance > 0) {
-    return message.reply(`You still have money. Claim is only for players with $0 balance.`);
+    return message.reply(`You still have money. Claim is only for broke people.`);
   }
 
   if (user.lastClaim && now - user.lastClaim < twentyFourHours) {
@@ -29,5 +29,5 @@ export async function claimCommand(client, message) {
   user.lastClaim = now;
   await saveUser(userId, user);
 
-  message.reply(`${message.author}, you claimed $100! Your new balance is $${user.balance}.`);
+  message.reply(`${message.author}, you claimed $100! Now go gamble with it!.`);
 }
