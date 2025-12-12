@@ -2,7 +2,7 @@ import { newBlackjackGame, playerHit, dealerDraw } from "../games/blackjack/engi
 import { bjEmbed } from "../utils/bjEmbed.js";
 import { getUser, saveUser } from "../services/userCache.js";
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
-import { processGame } from "../utils/house.js"; // <-- house integration
+import { processGame } from "../utils/house.js"; // house integration
 
 export async function blackjackCommand(client, message, args) {
   const bet = parseInt(args[2]);
@@ -23,10 +23,21 @@ export async function blackjackCommand(client, message, args) {
   const streak = user.blackjackStreak ?? 0;
   const state = newBlackjackGame(bet, streak);
 
+  // Make sure dealerHand is always an array
+  if (!Array.isArray(state.dealerHand)) state.dealerHand = [state.dealerHand];
+
   const buttons = () =>
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("hit").setLabel("Hit").setStyle(ButtonStyle.Secondary).setDisabled(state.gameOver),
-      new ButtonBuilder().setCustomId("stand").setLabel("Stand").setStyle(ButtonStyle.Primary).setDisabled(state.gameOver)
+      new ButtonBuilder()
+        .setCustomId("hit")
+        .setLabel("Hit")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(state.gameOver),
+      new ButtonBuilder()
+        .setCustomId("stand")
+        .setLabel("Stand")
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(state.gameOver)
     );
 
   const gameMessage = await message.reply({
@@ -43,7 +54,7 @@ export async function blackjackCommand(client, message, args) {
     const id = interaction.customId;
 
     if (id === "hit") {
-      const res = await playerHit(state); // <-- await since async now
+      const res = await playerHit(state);
 
       if (res.result === "bust") {
         state.streak = 0;
@@ -52,7 +63,9 @@ export async function blackjackCommand(client, message, args) {
 
         state.gameOver = true;
         await interaction.update({
-          embeds: [bjEmbed("You Busted!", bet, state.playerHand, state.dealerHand, state.playerTotal, state.dealerTotal, state.streak, "Red")],
+          embeds: [
+            bjEmbed("You Busted!", bet, state.playerHand, state.dealerHand, state.playerTotal, state.dealerTotal, state.streak, "Red")
+          ],
           components: [buttons()]
         });
 
@@ -67,7 +80,7 @@ export async function blackjackCommand(client, message, args) {
     }
 
     if (id === "stand") {
-      const result = await dealerDraw(state); // <-- await
+      const result = await dealerDraw(state);
 
       let color = "Yellow";
       let title = "Tie.";
@@ -93,7 +106,9 @@ export async function blackjackCommand(client, message, args) {
       state.gameOver = true;
 
       await interaction.update({
-        embeds: [bjEmbed(title, bet, state.playerHand, state.dealerHand, state.playerTotal, state.dealerTotal, state.streak, color)],
+        embeds: [
+          bjEmbed(title, bet, state.playerHand, state.dealerHand, state.playerTotal, state.dealerTotal, state.streak, color)
+        ],
         components: [buttons()]
       });
 
@@ -104,7 +119,9 @@ export async function blackjackCommand(client, message, args) {
   collector.on("end", () => {
     if (!state.gameOver) {
       gameMessage.edit({
-        embeds: [bjEmbed("Game ended due to inactivity.", bet, state.playerHand, state.dealerHand, state.playerTotal, null, state.streak, "Red")],
+        embeds: [
+          bjEmbed("Game ended due to inactivity.", bet, state.playerHand, state.dealerHand, state.playerTotal, null, state.streak, "Red")
+        ],
         components: [buttons()]
       }).catch(() => {});
     }
