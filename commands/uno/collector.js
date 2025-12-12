@@ -14,18 +14,18 @@ collector.on("end", async (collected, reason) => {
     user.balance += prize;
     await saveUser(userRef, user);
 
-    processGame(prize); // house loses
+    await processGame(prize); // house loses
 
     channel.send(`${channel.guild.members.cache.get(userRef)}, you won $${prize}!`).catch(() => {});
   }
 
   if (state.winner === "bot") {
-    processGame(-state.bet); // house gains
+    await processGame(-state.bet); // house gains
     channel.send(`${channel.guild.members.cache.get(state.userId)}, bot won — you lost $${state.bet}.`).catch(() => {});
   }
 
   if (reason !== "winner") {
-    processGame(-state.bet); // house gains on timeout
+    await processGame(-state.bet); // house gains on timeout
     channel.send(`${channel.guild.members.cache.get(state.userId)}, UNO ended. You lost $${state.bet}.`).catch(() => {});
   }
 
