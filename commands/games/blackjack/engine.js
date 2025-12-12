@@ -31,7 +31,10 @@ export function dealerDraw(state) {
   const target = state.playerTotal;
   let dealerTotal = handValue(state.dealerHand);
 
-  // Weighted difficulty scaling (matches your original logic)
+  const SPECIAL_ROLE = process.env.ROLE_ID;
+  const hasBoost = state.member?.roles?.cache?.has(SPECIAL_ROLE) || false;
+  const BOOST = 0.10; // 10% softer dealer behavior for boosted players
+
   const difficulty = Math.min(1 + state.streak * 0.15, 3.5);
   const values = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
   const suits = ["♠","♥","♦","♣"];
@@ -57,7 +60,25 @@ export function dealerDraw(state) {
   };
 
   while (dealerTotal <= target && dealerTotal <= 21) {
-    const card = state.streak === 0 ? drawCard() : weightedPick(target, dealerTotal);
+
+    // draw card as usual
+    let card = state.streak === 0
+      ? drawCard()
+      : weightedPick(target, dealerTotal);
+
+    // role-boost softens the dealer’s draw 10% of the time
+    if (hasBoost && Math.random() < BOOST) {
+      const alt = drawCard();
+      const altTotal = handValue([...state.dealerHand, alt]);
+      const cardTotal = handValue([...state.dealerHand, card]);
+
+      // pick whichever card is WORSE for the dealer
+      // meaning: pick the one that is less likely to beat the player
+      if (altTotal < cardTotal || altTotal > 21) {
+        card = alt;
+      }
+    }
+
     state.dealerHand.push(card);
     dealerTotal = handValue(state.dealerHand);
 
