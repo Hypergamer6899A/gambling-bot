@@ -1,10 +1,11 @@
-import { startUnoCollector } from "../uno/collector.js";          // stays the same
-import { newGameState } from "../games/uno/engine.js";           // fixed
-import { saveGame } from "../games/uno/state.js";                // fixed
-import { createUnoChannel } from "../utils/channel.js";          // stays the same
-import { unoEmbed } from "../utils/unoEmbed.js";                 // stays the same
-import { temp } from "../utils/tempMessage.js";                  // stays the same
-import { getUser, saveUser } from "../services/userCache.js";    // stays the same
+import { startUnoCollector } from "../uno/collector.js";
+import { newGameState } from "../games/uno/engine.js";
+import { saveGame } from "../games/uno/state.js";
+import { createUnoChannel } from "../utils/channel.js";
+import { unoEmbed } from "../utils/unoEmbed.js";
+import { temp } from "../utils/tempMessage.js";
+import { getUser, saveUser } from "../services/userCache.js";
+import { processGame } from "../utils/house.js"; // <-- house integration
 
 export async function unoStart(client, message, args) {
   const bet = parseInt(args[2]);
@@ -15,14 +16,16 @@ export async function unoStart(client, message, args) {
   if (user.balance < bet)
     return message.reply("You don’t have enough money for that bet.");
 
-  // deduct bet
+  // Deduct bet from player
   user.balance -= bet;
   await saveUser(message.author.id, user);
+
+  // Give bet to house immediately
+  await processGame(-bet); // house gains bet
 
   const guild = message.guild;
   const channel = await createUnoChannel(guild, message.author, process.env.UNO_CATEGORY_ID);
 
-  // create game state
   const state = newGameState(bet);
   state.channelId = channel.id;
   state.userId = message.author.id;
@@ -33,9 +36,5 @@ export async function unoStart(client, message, args) {
   state.embedMessageId = statusMsg.id;
   await saveGame(state.userId, state);
 
-  // start message collector
   startUnoCollector(client, channel, state.userId);
-
-  return;
 }
-
