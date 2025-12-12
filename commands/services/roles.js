@@ -17,11 +17,13 @@ export async function updateTopThreeRole(client) {
   const role = guild.roles.cache.get(ROLE_ID);
   if (!role) return;
 
-  guild.members.cache.forEach(member => {
-    if (topThreeIds.includes(member.id)) {
-      if (!member.roles.cache.has(role.id)) member.roles.add(role).catch(() => {});
-    } else {
-      if (member.roles.cache.has(role.id)) member.roles.remove(role).catch(() => {});
-    }
-  });
+  const members = await guild.members.fetch(); // forces full member list
+
+members.forEach(member => {
+  if (topThreeIds.includes(member.id)) {
+    if (!member.roles.cache.has(role.id)) member.roles.add(role).catch(() => {});
+  } else {
+    if (member.roles.cache.has(role.id)) member.roles.remove(role).catch(() => {});
+  }
+});
 }
