@@ -16,8 +16,12 @@ export async function rouletteCommand(client, message, args) {
   if (user.balance < bet)
     return message.reply("You don't have enough money.");
 
-  // Deduct temporary
+  // Deduct player bet
   user.balance -= bet;
+  await saveUser(message.author.id, user);
+
+  // Give bet to house immediately
+  await processGame(-bet); // house gains bet
 
   const SPECIAL_ROLE = process.env.ROLE_ID;
   const hasBoost = message.member.roles.cache.has(SPECIAL_ROLE);
@@ -56,9 +60,7 @@ export async function rouletteCommand(client, message, args) {
   if (win) {
     payout = bet * 2;
     user.balance += payout;
-    await processGame(payout); // house loses
-  } else {
-    await processGame(-bet); // house gains
+    await processGame(payout); // house loses payout
   }
 
   await saveUser(message.author.id, user);
