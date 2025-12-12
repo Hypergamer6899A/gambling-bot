@@ -30,7 +30,7 @@ export function messageRouter(client, message) {
 
   switch (cmd) {
     case "uno":
-      return unoStart(client, message, args);
+      return unoCommand(client, message, args);
     case "blackjack":
       return blackjackCommand(client, message, args);
     case "roulette":
