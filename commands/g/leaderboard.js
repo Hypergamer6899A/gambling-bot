@@ -6,25 +6,15 @@ export async function leaderboardCommand(client, message) {
 
   const users = await db.collection("users")
     .orderBy("balance", "desc")
-    .limit(10)
+    .limit(5)
     .get();
-
-  const guild = message.guild;
 
   let text = "";
   let rank = 1;
 
   for (const doc of users.docs) {
     const data = doc.data();
-    let display;
-
-    try {
-      // Try to fetch user to confirm they're actually in the guild
-      await guild.members.fetch(doc.id);
-      display = `<@${doc.id}>`;                    // Mention
-    } catch {
-      display = `<@${doc.id}>`;                    // Mention anyway (safe fallback)
-    }
+    const display = `<@${doc.id}>`; // Trust the mention. Believe in the tag.
 
     text += `**${rank}.** ${display} — $${data.balance}\n`;
     rank++;
