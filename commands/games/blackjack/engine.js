@@ -1,6 +1,6 @@
 // src/commands/games/blackjack/engine.js
 import { drawCard, handValue } from "./utils.js";
-import { processGame } from "../utils/house.js";
+import { processGame } from "../../utils/house.js";
 
 /**
  * Start a new blackjack game
