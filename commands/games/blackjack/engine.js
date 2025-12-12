@@ -1,4 +1,5 @@
 import { drawCard, handValue } from "./utils.js";
+import { processGame } from "../utils/house.js";
 
 export function newBlackjackGame(bet, streak = 0) {
   const playerHand = [drawCard(), drawCard()];
@@ -21,6 +22,7 @@ export function playerHit(state) {
 
   if (state.playerTotal > 21) {
     state.gameOver = true;
+    processGame(-state.bet); // player busts, house gains
     return { result: "bust" };
   }
 
@@ -33,7 +35,7 @@ export function dealerDraw(state) {
 
   const SPECIAL_ROLE = process.env.ROLE_ID;
   const hasBoost = state.member?.roles?.cache?.has(SPECIAL_ROLE) || false;
-  const BOOST = 0.10; // 10% softer dealer behavior for boosted players
+  const BOOST = 0.10;
 
   const difficulty = Math.min(1 + state.streak * 0.15, 3.5);
   const values = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
@@ -45,52 +47,43 @@ export function dealerDraw(state) {
       let cardVal = v === "A" ? 11 : (["J","Q","K"].includes(v) ? 10 : parseInt(v));
       const diff = target - current;
       let weight = 1;
-
       if (state.streak > 0) {
         if (cardVal <= diff) weight = Math.round(3 * difficulty);
         else if (cardVal - diff <= 3) weight = Math.round(2 * difficulty);
       }
-
       for (let i = 0; i < weight; i++) pool.push(v);
     }
-
     const v = pool[Math.floor(Math.random() * pool.length)];
     const s = suits[Math.floor(Math.random() * suits.length)];
     return `${v}${s}`;
   };
 
   while (dealerTotal <= target && dealerTotal <= 21) {
-
-    // draw card as usual
-    let card = state.streak === 0
-      ? drawCard()
-      : weightedPick(target, dealerTotal);
-
-    // role-boost softens the dealer’s draw 10% of the time
+    let card = state.streak === 0 ? drawCard() : weightedPick(target, dealerTotal);
     if (hasBoost && Math.random() < BOOST) {
       const alt = drawCard();
       const altTotal = handValue([...state.dealerHand, alt]);
       const cardTotal = handValue([...state.dealerHand, card]);
-
-      // pick whichever card is WORSE for the dealer
-      // meaning: pick the one that is less likely to beat the player
-      if (altTotal < cardTotal || altTotal > 21) {
-        card = alt;
-      }
+      if (altTotal < cardTotal || altTotal > 21) card = alt;
     }
-
     state.dealerHand.push(card);
     dealerTotal = handValue(state.dealerHand);
-
     if (dealerTotal > 21) {
       state.dealerTotal = dealerTotal;
+      processGame(state.bet); // dealer busts, player wins
       return "dealer_bust";
     }
   }
 
   state.dealerTotal = dealerTotal;
 
-  if (dealerTotal > target) return "dealer_win";
-  if (dealerTotal < target) return "player_win";
-  return "tie";
+  if (dealerTotal > target) {
+    processGame(-state.bet); // dealer wins, house gains
+    return "dealer_win";
+  }
+  if (dealerTotal < target) {
+    processGame(state.bet); // player wins, house loses
+    return "player_win";
+  }
+  return "tie"; // no balance change
 }
