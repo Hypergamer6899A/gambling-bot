@@ -29,5 +29,5 @@ export async function claimCommand(client, message) {
   user.lastClaim = now;
   await saveUser(userId, user);
 
-  message.reply(`${message.author}, you claimed $100! Now go gamble with it!.`);
+  message.reply(`${message.author}, you claimed $100! Now go gamble with it!`);
 }
