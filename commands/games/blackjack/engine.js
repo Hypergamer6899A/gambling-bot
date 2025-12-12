@@ -96,7 +96,6 @@ export async function dealerDraw(state) {
   state.dealerTotal = dealerTotal;
 
   if (dealerTotal > target) {
-    await processGame(-state.bet); // dealer wins, house gains
     return "dealer_win";
   }
 
