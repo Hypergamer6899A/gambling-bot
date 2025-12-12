@@ -35,7 +35,11 @@ client.once("ready", async () => {
 // Message handler
 client.on("messageCreate", async (msg) => {
   try {
+    // ignore bots
     if (msg.author.bot) return;
+
+    // only react to messages that start with "!g"
+    if (!msg.content.startsWith("!g")) return;
 
     // Add thinking reaction
     await addThinkingReaction(msg, THINKING_EMOJI);
@@ -63,6 +67,7 @@ client.on("messageCreate", async (msg) => {
     console.error("messageCreate handler error:", err);
   }
 });
+
 
 // Keepalive
 const app = express();
