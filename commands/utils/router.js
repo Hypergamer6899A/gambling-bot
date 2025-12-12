@@ -7,9 +7,6 @@ import { giftCommand } from "../g/gift.js";
 import { helpCommand } from "../g/help.js";
 import { claimCommand } from "../g/claim.js";
 
-// UNO subcommands
-import { startUnoCollector } from "../uno/collector.js";
-
 const PREFIX = "!g";
 const UNO_PREFIX = "!uno";
 
