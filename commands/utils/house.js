@@ -1,14 +1,14 @@
-// house.js
+// src/commands/utils/house.js
 const BOT_ID = process.env.BOT_ID;
 
-// In-memory balance for simplicity (replace with DB if needed)
-let balance = 100000; // starting house money, can adjust
+// In-memory balance (adjust starting house money as needed)
+let balance = 100000;
 
 /**
  * Get the bot's current balance
  * @returns {number}
  */
-function getBalance() {
+export function getBalance() {
   return balance;
 }
 
@@ -16,7 +16,7 @@ function getBalance() {
  * Adjust the bot's balance
  * @param {number} amount - positive to add, negative to subtract
  */
-function updateBalance(amount) {
+export function updateBalance(amount) {
   balance += amount;
   return balance;
 }
@@ -26,15 +26,8 @@ function updateBalance(amount) {
  * @param {number} playerAmount - positive if player wins, negative if loses
  * Updates house balance inversely
  */
-function processGame(playerAmount) {
+export function processGame(playerAmount) {
   // Player wins = negative for house
   updateBalance(-playerAmount);
   return getBalance();
 }
-
-module.exports = {
-  BOT_ID,
-  getBalance,
-  updateBalance,
-  processGame,
-};
