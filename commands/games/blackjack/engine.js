@@ -1,6 +1,13 @@
+// src/commands/games/blackjack/engine.js
 import { drawCard, handValue } from "./utils.js";
 import { processGame } from "../utils/house.js";
 
+/**
+ * Start a new blackjack game
+ * @param {number} bet
+ * @param {number} streak
+ * @returns {object} game state
+ */
 export function newBlackjackGame(bet, streak = 0) {
   const playerHand = [drawCard(), drawCard()];
   const dealerHand = [drawCard(), drawCard()];
@@ -16,7 +23,12 @@ export function newBlackjackGame(bet, streak = 0) {
   };
 }
 
-export function playerHit(state) {
+/**
+ * Player hits
+ * @param {object} state - game state
+ * @returns {Promise<object>} result
+ */
+export async function playerHit(state) {
   state.playerHand.push(drawCard());
   state.playerTotal = handValue(state.playerHand);
 
@@ -29,6 +41,11 @@ export function playerHit(state) {
   return { result: "continue" };
 }
 
+/**
+ * Dealer draws
+ * @param {object} state - game state
+ * @returns {Promise<string>} result
+ */
 export async function dealerDraw(state) {
   const target = state.playerTotal;
   let dealerTotal = handValue(state.dealerHand);
@@ -65,6 +82,7 @@ export async function dealerDraw(state) {
       const cardTotal = handValue([...state.dealerHand, card]);
       if (altTotal < cardTotal || altTotal > 21) card = alt;
     }
+
     state.dealerHand.push(card);
     dealerTotal = handValue(state.dealerHand);
 
@@ -81,6 +99,7 @@ export async function dealerDraw(state) {
     await processGame(-state.bet); // dealer wins, house gains
     return "dealer_win";
   }
+
   if (dealerTotal < target) {
     await processGame(state.bet); // player wins, house loses
     return "player_win";
