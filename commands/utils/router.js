@@ -17,7 +17,6 @@ export function messageRouter(client, message) {
   const args = content.split(/\s+/);
   const cmd = args[1]?.toLowerCase();
 
-      return unoCommand(client, message, args);
     case "blackjack":
       return blackjackCommand(client, message, args);
     case "roulette":
