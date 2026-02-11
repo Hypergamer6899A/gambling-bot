@@ -2,7 +2,7 @@ import { getUser, saveUser } from "../services/userCache.js";
 
 export async function giftCommand(client, message, args) {
   const target = message.mentions.users.first();
-  const amount = parseInt(args[3]);
+  const amount = parseInt(args[2]);
 
   if (!target)
     return message.reply("Tag someone to gift money to.");
