@@ -144,7 +144,7 @@ export async function blackjackCommand(client, message, args) {
         await interaction.update({
           embeds: [
             bjEmbed(
-              "💥 You Busted!",
+              "You Busted!",
               bet,
               state.playerHand,
               state.dealerHand,
