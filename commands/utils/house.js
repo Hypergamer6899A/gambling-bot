@@ -9,20 +9,32 @@ const STARTING_BALANCE = 100000;
  * @returns {Promise<object>} the house user object
  */
 export async function getHouse() {
-  let house = await getUser(BOT_ID);
+  const ref = db.collection("users").doc(BOT_ID);
+  const snap = await ref.get();
 
-  if (!house) {
+  let house;
+
+  if (!snap.exists) {
     house = {
-      id: BOT_ID,
-      name: BOT_NAME,
       balance: STARTING_BALANCE,
-      // add any other user properties your system uses
+      blackjackStreak: 0,
+      name: BOT_NAME,
     };
+
     await saveUser(BOT_ID, house);
+  } else {
+    house = await getUser(BOT_ID);
+
+    // Ensure correct starting balance if missing
+    if (house.balance == null) {
+      house.balance = STARTING_BALANCE;
+      await saveUser(BOT_ID, house);
+    }
   }
 
   return house;
 }
+
 
 /**
  * Adjust the house balance
