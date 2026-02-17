@@ -6,6 +6,7 @@ import {
 
 import { bjEmbed } from "../utils/bjEmbed.js";
 import { getUser, saveUser } from "../services/userCache.js";
+
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -17,6 +18,9 @@ import { processGame } from "../utils/house.js";
 export async function blackjackCommand(client, message, args) {
   const bet = parseInt(args[2]);
 
+  // =========================
+  // Bet Validation
+  // =========================
   if (isNaN(bet) || bet <= 0)
     return message.reply("Invalid bet amount.");
 
@@ -25,11 +29,13 @@ export async function blackjackCommand(client, message, args) {
   if (user.balance < bet)
     return message.reply("You don’t have enough money.");
 
-  // ✅ Deduct bet immediately
+  // =========================
+  // Deduct Bet Immediately
+  // =========================
   user.balance -= bet;
   await saveUser(message.author.id, user);
 
-  // ✅ House gains bet immediately
+  // House gains bet immediately
   await processGame(-bet);
 
   // Load streak
@@ -38,19 +44,12 @@ export async function blackjackCommand(client, message, args) {
   // Start game
   const state = newBlackjackGame(bet, streak);
 
-  // ✅ Fix boost support
+  // Boost support
   state.member = message.member;
 
-  // Ensure hands are arrays
-  state.playerHand = Array.isArray(state.playerHand)
-    ? state.playerHand
-    : [state.playerHand];
-
-  state.dealerHand = Array.isArray(state.dealerHand)
-    ? state.dealerHand
-    : [state.dealerHand];
-
-  // 🎛 Buttons
+  // =========================
+  // Buttons Builder
+  // =========================
   const buttons = () =>
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -67,7 +66,7 @@ export async function blackjackCommand(client, message, args) {
     );
 
   // ====================================================
-  // ✅ NATURAL BLACKJACK CHECK (First Deal)
+  // NATURAL BLACKJACK CHECK (First Deal)
   // ====================================================
   if (state.playerTotal === 21) {
     state.gameOver = true;
@@ -80,6 +79,7 @@ export async function blackjackCommand(client, message, args) {
 
     state.streak += 1;
     user.blackjackStreak = state.streak;
+
     await saveUser(message.author.id, user);
 
     return message.reply({
@@ -99,7 +99,7 @@ export async function blackjackCommand(client, message, args) {
   }
 
   // ====================================================
-  // Normal Game Start Message
+  // Normal Game Start
   // ====================================================
   const gameMessage = await message.reply({
     embeds: [
@@ -134,6 +134,7 @@ export async function blackjackCommand(client, message, args) {
     if (id === "hit") {
       const res = await playerHit(state);
 
+      // Player bust
       if (res.result === "bust") {
         state.gameOver = true;
         state.streak = 0;
@@ -221,7 +222,7 @@ export async function blackjackCommand(client, message, args) {
         await processGame(payout);
       }
 
-      // Save streak + user
+      // Save streak
       user.blackjackStreak = state.streak;
       await saveUser(message.author.id, user);
 
