@@ -16,56 +16,75 @@ export async function rouletteCommand(client, message, args) {
   if (user.balance < bet)
     return message.reply("You don't have enough money.");
 
-  // Deduct player bet
+  // Deduct bet immediately
   user.balance -= bet;
   await saveUser(message.author.id, user);
 
-  // Give bet to house immediately
-  await processGame(-bet); // house gains bet
+  // House gains bet immediately
+  await processGame(-bet);
 
+  // Boost role luck
   const SPECIAL_ROLE = process.env.ROLE_ID;
   const hasBoost = message.member.roles.cache.has(SPECIAL_ROLE);
   const BOOST = 0.12;
 
   let roll = Math.floor(Math.random() * 37);
 
+  // Red number list
+  const redNumbers = [
+    1,3,5,7,9,12,14,16,18,
+    19,21,23,25,27,30,32,34,36
+  ];
+
+  // Helper functions
+  const isRed = n => redNumbers.includes(n);
+  const colorOf = n =>
+    n === 0 ? "Green" : isRed(n) ? "Red" : "Black";
+
+  const isOdd = n => n % 2 === 1;
+  const isEven = n => n !== 0 && n % 2 === 0;
+
+  // Boosted reroll chance
   if (hasBoost) {
     const altRoll = Math.floor(Math.random() * 37);
-    const isRed = n => [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36].includes(n);
-    const colorOf = n => (n === 0 ? "Green" : (isRed(n) ? "Red" : "Black"));
-    const odd = n => n % 2 === 1;
-    const even = n => n % 2 === 0 && n !== 0;
+
     function favorsChoice(number) {
       if (choice === "red") return colorOf(number) === "Red";
       if (choice === "black") return colorOf(number) === "Black";
-      if (choice === "odd") return odd(number);
-      if (choice === "even") return even(number);
+      if (choice === "odd") return isOdd(number);
+      if (choice === "even") return isEven(number);
       return false;
     }
-    if (favorsChoice(altRoll) && Math.random() < BOOST) roll = altRoll;
+
+    if (favorsChoice(altRoll) && Math.random() < BOOST) {
+      roll = altRoll;
+    }
   }
 
-  const isRed = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36].includes(roll);
-  const color = roll === 0 ? "Green" : (isRed ? "Red" : "Black");
-  const isOdd = roll % 2 === 1;
-  const isEven = roll % 2 === 0 && roll !== 0;
+  // Final result values
+  const resultColor = colorOf(roll);
 
+  // Determine win
   let win = false;
-  if (choice === "red" && color === "Red") win = true;
-  if (choice === "black" && color === "Black") win = true;
-  if (choice === "odd" && isOdd) win = true;
-  if (choice === "even" && isEven) win = true;
+  if (choice === "red" && resultColor === "Red") win = true;
+  if (choice === "black" && resultColor === "Black") win = true;
+  if (choice === "odd" && isOdd(roll)) win = true;
+  if (choice === "even" && isEven(roll)) win = true;
 
+  // Payout
   let payout = 0;
   if (win) {
     payout = bet * 2;
     user.balance += payout;
-    await processGame(payout); // house loses payout
+
+    // House pays winnings
+    await processGame(payout);
   }
 
   await saveUser(message.author.id, user);
 
-  message.reply({
-    embeds: [rouletteEmbed(roll, win ? "Green" : "Red", color, bet, payout)]
+  // Send embed
+  return message.reply({
+    embeds: [rouletteEmbed(roll, choice, resultColor, bet, payout, win)]
   });
 }
