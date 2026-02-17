@@ -13,7 +13,8 @@ export function helpEmbed() {
         `\`!g gift <user> <amount>\` — Gift money\n\n` +
         `**Games**\n` +
         `\`!g blackjack <amount>\`\n` +
-        `\`!g roulette <red|black|odd|even> <amount>\`\n\n` +
+        `\`!g roulette <red|black|odd|even> <amount>\`\n` +
+        `\`!g poker <amount>\`\n` +
         `**Misc**\n` +
         `\`!g claim\` — Claim $100 every 24h when broke\n` +
         `\`!g leaderboard\` — Top balances\n` +
