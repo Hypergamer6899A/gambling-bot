@@ -46,7 +46,7 @@ export async function pokerCommand(client, message, args) {
   );
 
   const embed = pokerEmbed(
-    "Texas Hold’em 🃏",
+    "Texas Hold’em",
     bet,
     game.board,
     game.playerCards,
@@ -66,7 +66,7 @@ export async function pokerCommand(client, message, args) {
   collector.on("collect", async (interaction) => {
     if (interaction.user.id !== message.author.id) {
       return interaction.reply({
-        content: "Not your poker table 😏",
+        content: "Not your poker table",
         ephemeral: true
       });
     }
@@ -98,11 +98,11 @@ export async function pokerCommand(client, message, args) {
 
         await processGame(payout);
 
-        outcomeText = `🎉 You WIN!\n**${result.playerScore.name}** beats **${result.botScore.name}**`;
+        outcomeText = `You WIN!\n**${result.playerScore.name}** beats **${result.botScore.name}**`;
       }
 
       else if (result.winner === "bot") {
-        outcomeText = `💀 Bot wins!\n**${result.botScore.name}** beats **${result.playerScore.name}**`;
+        outcomeText = `Bot wins!\n**${result.botScore.name}** beats **${result.playerScore.name}**`;
       }
 
       else {
@@ -117,7 +117,7 @@ export async function pokerCommand(client, message, args) {
       await saveUser(message.author.id, user);
 
       const finalEmbed = pokerEmbed(
-        "Game Over 🃏",
+        "Game Over",
         bet,
         game.board,
         game.playerCards,
@@ -133,7 +133,7 @@ export async function pokerCommand(client, message, args) {
 
     // Update embed mid-pick
     const updated = pokerEmbed(
-      "Texas Hold’em 🃏",
+      "Texas Hold’em",
       bet,
       game.board,
       game.playerCards,
