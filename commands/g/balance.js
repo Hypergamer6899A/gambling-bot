@@ -1,5 +1,6 @@
 import { EmbedBuilder } from "discord.js";
 import { getUser } from "../services/userCache.js";
+import { UTIL_COLORS } from "../utils/embedColors.js";
 
 export async function balanceCommand(client, message) {
   const user = await getUser(message.author.id);
@@ -8,10 +9,10 @@ export async function balanceCommand(client, message) {
     embeds: [
       new EmbedBuilder()
         .setTitle("Your Balance")
-        .setColor("Blurple")
+        .setColor(UTIL_COLORS.BLURPLE)
         .setDescription(
           `**Current Wallet**\n` +
-          `You currently have **$${user.balance}**.`
+            `You currently have **$${user.balance}**.`
         )
     ]
   });
