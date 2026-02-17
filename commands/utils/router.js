@@ -5,6 +5,8 @@ import { balanceCommand } from "../g/balance.js";
 import { giftCommand } from "../g/gift.js";
 import { helpCommand } from "../g/help.js";
 import { claimCommand } from "../g/claim.js";
+import { pokerCommand } from "../g/poker.js";
+
 
 const PREFIX = "!g";
 
@@ -23,6 +25,9 @@ export function messageRouter(client, message) {
 
     case "roulette":
       return rouletteCommand(client, message, args);
+
+      case "poker":
+      return pokerCommand(client, message, args);
 
     case "leaderboard":
       return leaderboardCommand(client, message, args);
