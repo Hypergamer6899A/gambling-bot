@@ -36,15 +36,21 @@ export async function pokerCommand(client, message, args) {
   const game = newPokerGame();
   activeGames.set(message.author.id, game);
 
-  const row = new ActionRowBuilder().addComponents(
-    game.playerCards.map((card, i) =>
-      new ButtonBuilder()
-        .setCustomId(`poker_pick_${i}`)
-        .setLabel(card)
-        .setStyle(ButtonStyle.Primary)
-    )
-  );
+  // Helper: Build card buttons with highlight
+  function buildButtons() {
+    return new ActionRowBuilder().addComponents(
+      game.playerCards.map((card, i) => {
+        const selected = game.chosen.includes(card);
 
+        return new ButtonBuilder()
+          .setCustomId(`poker_pick_${i}`)
+          .setLabel(card)
+          .setStyle(selected ? ButtonStyle.Success : ButtonStyle.Primary);
+      })
+    );
+  }
+
+  // Send initial embed
   const embed = pokerEmbed(
     "Texas Hold’em",
     bet,
@@ -56,7 +62,7 @@ export async function pokerCommand(client, message, args) {
 
   const sent = await message.reply({
     embeds: [embed],
-    components: [row]
+    components: [buildButtons()]
   });
 
   const collector = sent.createMessageComponentCollector({
@@ -74,16 +80,24 @@ export async function pokerCommand(client, message, args) {
     const index = parseInt(interaction.customId.split("_")[2]);
     const picked = game.playerCards[index];
 
+    // ✅ Toggle select/unselect
     if (game.chosen.includes(picked)) {
-      return interaction.reply({
-        content: "Already chosen!",
-        ephemeral: true
-      });
+      // Unselect
+      game.chosen = game.chosen.filter((c) => c !== picked);
+    } else {
+      // Prevent choosing more than 3
+      if (game.chosen.length >= 3) {
+        return interaction.reply({
+          content: "You can only choose 3 cards!",
+          ephemeral: true
+        });
+      }
+
+      // Select
+      game.chosen.push(picked);
     }
 
-    game.chosen.push(picked);
-
-    // Finish once 3 chosen
+    // ✅ If exactly 3 chosen → finish game
     if (game.chosen.length === 3) {
       collector.stop();
 
@@ -98,20 +112,27 @@ export async function pokerCommand(client, message, args) {
 
         await processGame(payout);
 
-        outcomeText = `You WIN!\n**${result.playerScore.name}** beats **${result.botScore.name}**`;
+        outcomeText =
+          `You WIN!\n` +
+          `**${result.playerScore.name}** beats **${result.botScore.name}**`;
       }
 
       else if (result.winner === "bot") {
-        outcomeText = `Bot wins!\n**${result.botScore.name}** beats **${result.playerScore.name}**`;
+        outcomeText =
+          `Bot wins!\n` +
+          `**${result.botScore.name}** beats **${result.playerScore.name}**`;
       }
 
       else {
         // Tie → refund bet
         payout = bet;
         user.balance += payout;
+
         await processGame(payout);
 
-        outcomeText = `🤝 Tie! Bet refunded.\nBoth had **${result.playerScore.name}**`;
+        outcomeText =
+          `Tie! Bet refunded.\n` +
+          `Both had **${result.playerScore.name}**`;
       }
 
       await saveUser(message.author.id, user);
@@ -131,18 +152,23 @@ export async function pokerCommand(client, message, args) {
       });
     }
 
-    // Update embed mid-pick
-    const updated = pokerEmbed(
+    // ✅ Otherwise update embed + highlighted buttons
+    const updatedEmbed = pokerEmbed(
       "Texas Hold’em",
       bet,
       game.board,
       game.playerCards,
       game.chosen,
-      "Pick 3 cards!"
+      `Pick 3 cards! (${game.chosen.length}/3 selected)`
     );
 
     await interaction.update({
-      embeds: [updated]
+      embeds: [updatedEmbed],
+      components: [buildButtons()]
     });
+  });
+
+  collector.on("end", async () => {
+    activeGames.delete(message.author.id);
   });
 }
