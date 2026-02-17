@@ -1,15 +1,22 @@
 // src/commands/games/poker/utils.js
 
 const suits = ["♠", "♥", "♦", "♣"];
-const ranks = [
-  "2", "3", "4", "5", "6", "7", "8", "9", "10",
-  "J", "Q", "K", "A"
-];
+const ranks = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
 
 const rankValues = {
-  "2": 2, "3": 3, "4": 4, "5": 5,
-  "6": 6, "7": 7, "8": 8, "9": 9,
-  "10": 10, "J": 11, "Q": 12, "K": 13, "A": 14
+  "2": 2,
+  "3": 3,
+  "4": 4,
+  "5": 5,
+  "6": 6,
+  "7": 7,
+  "8": 8,
+  "9": 9,
+  "10": 10,
+  J: 11,
+  Q: 12,
+  K: 13,
+  A: 14
 };
 
 export function makeDeck() {
@@ -33,10 +40,6 @@ export function draw(deck, n = 1) {
   return deck.splice(0, n);
 }
 
-/**
- * FULL poker scoring.
- * Returns rank number + name.
- */
 export function scoreHand(cards) {
   const ranksOnly = cards.map(c => c.slice(0, -1));
   const suitsOnly = cards.map(c => c.slice(-1));
@@ -45,16 +48,13 @@ export function scoreHand(cards) {
     .map(r => rankValues[r])
     .sort((a, b) => b - a);
 
-  // Count ranks
   const counts = {};
   for (const v of values) counts[v] = (counts[v] || 0) + 1;
 
   const groups = Object.values(counts).sort((a, b) => b - a);
 
-  // Flush check
   const flush = suitsOnly.every(s => s === suitsOnly[0]);
 
-  // Straight check
   const uniqueVals = [...new Set(values)];
   let straight = false;
 
@@ -65,16 +65,16 @@ export function scoreHand(cards) {
     }
   }
 
-  // Special Ace-low straight
-  if (uniqueVals.includes(14) &&
-      uniqueVals.includes(5) &&
-      uniqueVals.includes(4) &&
-      uniqueVals.includes(3) &&
-      uniqueVals.includes(2)) {
+  if (
+    uniqueVals.includes(14) &&
+    uniqueVals.includes(5) &&
+    uniqueVals.includes(4) &&
+    uniqueVals.includes(3) &&
+    uniqueVals.includes(2)
+  ) {
     straight = true;
   }
 
-  // Ranking checks
   if (straight && flush && values.includes(14)) {
     return { rank: 9, name: "Royal Flush" };
   }
