@@ -4,28 +4,58 @@ import { EmbedBuilder } from "discord.js";
 export async function leaderboardCommand(client, message) {
   const db = getFirestore();
 
-  const users = await db.collection("users")
+  // Fetch ALL users sorted by balance
+  const snap = await db.collection("users")
     .orderBy("balance", "desc")
-    .limit(5)
     .get();
 
-  let text = "";
-  let rank = 1;
+  if (snap.empty) {
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("Blue")
+          .setTitle("Leaderboard")
+          .setDescription("No users found.")
+      ]
+    });
+  }
 
-  for (const doc of users.docs) {
-    const data = doc.data();
-    const display = `<@${doc.id}>`; // Trust the mention. Believe in the tag.
+  // Convert into array
+  const allUsers = snap.docs.map(doc => ({
+    id: doc.id,
+    balance: doc.data().balance
+  }));
 
-    text += `**${rank}.** ${display} — $${data.balance}\n`;
-    rank++;
+  // Top 5
+  const top5 = allUsers.slice(0, 5);
+
+  let desc =
+    `**Top 5 Richest Gamblers**\n\n` +
+    top5
+      .map(
+        (u, i) =>
+          `**#${i + 1}** <@${u.id}> — **$${u.balance}**`
+      )
+      .join("\n");
+
+  // Find current user rank
+  const userIndex = allUsers.findIndex(u => u.id === message.author.id);
+
+  // If user is NOT in top 5, show their placement below
+  if (userIndex >= 5) {
+    const user = allUsers[userIndex];
+
+    desc +=
+      `\n\n⋯⋯⋯⋯⋯⋯⋯⋯⋯\n\n` +
+      `**#${userIndex + 1}** <@${user.id}> — **$${user.balance}**`;
   }
 
   return message.reply({
     embeds: [
       new EmbedBuilder()
-        .setColor("Green")
-        .setTitle("Leaderboard — Top Balances")
-        .setDescription(text || "No users found.")
+        .setColor("Blue") // Utility color
+        .setTitle("Leaderboard")
+        .setDescription(desc)
     ]
   });
 }
