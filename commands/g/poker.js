@@ -52,7 +52,7 @@ export async function pokerCommand(client, message, args) {
   }
 
   const embed = pokerEmbed(
-    "Texas Hold'em",
+    "5 Card Draw",
     bet,
     game.board,
     game.playerCards,
