@@ -1,13 +1,12 @@
 import { EmbedBuilder } from "discord.js";
 
-export function rouletteEmbed(result, color, winning, bet, payout) {
+export function rouletteEmbed(result, winning, bet, payout, color) {
   return new EmbedBuilder()
+    .setTitle("Roulette Results")
     .setColor(color)
-    .setTitle("Roulette")
     .setDescription(
-      `**Result:** ${result}\n` +
-      `**Winning Color:** ${winning}\n` +
-      `**Bet:** $${bet}\n` +
-      `**Payout:** $${payout}`
+      `**Spin Result**\n${result}\n\n` +
+      `**Winning Color**\n${winning}\n\n` +
+      `**Bet:** $${bet}\n`
     );
 }
