@@ -1,5 +1,3 @@
-// src/commands/games/poker/engine.js
-
 import { makeDeck, shuffle, draw, scoreHand } from "./utils.js";
 
 export function newPokerGame() {
@@ -17,7 +15,7 @@ export function newPokerGame() {
 }
 
 export function botPick(botCards) {
-  // Bot simply chooses first 3 for now
+  // Bot picks best 3 by brute forcing combos later
   return botCards.slice(0, 3);
 }
 
