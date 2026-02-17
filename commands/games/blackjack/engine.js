@@ -90,7 +90,7 @@ export async function dealerDraw(state) {
   };
 
   // Dealer draws until beating player or busting
-  while (dealerTotal <= target && dealerTotal <= 21) {
+  while (dealerTotal < target && dealerTotal < 21) {
     let card =
       state.streak === 0
         ? drawCard()
