@@ -1,16 +1,17 @@
-import { EmbedBuilder } from "discord.js";
+// src/commands/utils/rouletteEmbed.js
 
-export function rouletteEmbed(result, choice, resultColor, bet, payout, win) {
+import { EmbedBuilder } from "discord.js";
+import { GAME_COLORS } from "./embedColors.js";
+
+export function rouletteEmbed(result, choice, bet, payout, win) {
   return new EmbedBuilder()
     .setTitle("Roulette Results")
-    .setColor(resultColor === "Red" ? 0xff0000 :
-              resultColor === "Black" ? 0x000000 :
-              0x00ff00)
+    .setColor(win ? GAME_COLORS.WIN : GAME_COLORS.LOSS)
     .setDescription(
-      `**Spin Result:** ${result} (${resultColor})\n\n` +
-      `**You Bet On:** ${choice.toUpperCase()}\n\n` +
-      `**Bet Amount:** $${bet}\n` +
-      `**Outcome:** ${win ? "WIN" : "LOSS"}\n` +
-      `**Payout:** $${payout}`
+      `**Spin Result:** ${result}\n\n` +
+        `**You Bet On:** ${choice.toUpperCase()}\n\n` +
+        `**Bet Amount:** $${bet}\n` +
+        `**Outcome:** ${win ? "WIN" : "LOSS"}\n` +
+        `**Payout:** $${payout}`
     );
 }
