@@ -1,5 +1,5 @@
-import { getUser } from "../services/userCache.js";
 import { EmbedBuilder } from "discord.js";
+import { getUser } from "../services/userCache.js";
 
 export async function balanceCommand(client, message) {
   const user = await getUser(message.author.id);
@@ -7,10 +7,12 @@ export async function balanceCommand(client, message) {
   return message.reply({
     embeds: [
       new EmbedBuilder()
-        .setColor("Blurple")
         .setTitle("Your Balance")
-        .setDescription(`You currently have **$${user.balance}**.`)
+        .setColor("Blurple")
+        .setDescription(
+          `**Current Wallet**\n` +
+          `You currently have **$${user.balance}**.`
+        )
     ]
   });
 }
-
