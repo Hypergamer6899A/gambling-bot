@@ -30,15 +30,27 @@ export async function pokerCommand(client, message, args) {
   activeGames.set(message.author.id, game);
 
   function buildButtons() {
-    return new ActionRowBuilder().addComponents(
-      game.playerCards.map((card, i) => {
-        const selected = game.chosen.includes(card);
-        return new ButtonBuilder()
+    const row = new ActionRowBuilder();
+
+    game.playerCards.forEach((card, i) => {
+      const selected = game.chosen.includes(card);
+      row.addComponents(
+        new ButtonBuilder()
           .setCustomId(`poker_pick_${i}`)
           .setLabel(card)
-          .setStyle(selected ? ButtonStyle.Success : ButtonStyle.Primary);
-      })
+          .setStyle(selected ? ButtonStyle.Success : ButtonStyle.Primary)
+      );
+    });
+
+    // Add Forfeit button
+    row.addComponents(
+      new ButtonBuilder()
+        .setCustomId("poker_forfeit")
+        .setLabel("Forfeit")
+        .setStyle(ButtonStyle.Danger)
     );
+
+    return row;
   }
 
   const embed = pokerEmbed(
@@ -47,7 +59,7 @@ export async function pokerCommand(client, message, args) {
     game.board,
     game.playerCards,
     game.chosen,
-    "Pick 3 cards to play."
+    "Pick 3 cards to play or Forfeit."
   );
 
   const sent = await message.reply({ embeds: [embed], components: [buildButtons()] });
@@ -57,6 +69,28 @@ export async function pokerCommand(client, message, args) {
   collector.on("collect", async interaction => {
     if (interaction.user.id !== message.author.id) {
       return interaction.reply({ content: "This is not your poker game.", ephemeral: true });
+    }
+
+    // Handle Forfeit
+    if (interaction.customId === "poker_forfeit") {
+      user.balance += bet; // refund
+      await saveUser(message.author.id, user);
+      await processGame(bet); // remove bet from house
+
+      const finalEmbed = pokerEmbed(
+        "Game Over",
+        bet,
+        game.board,
+        game.playerCards,
+        game.chosen,
+        "You forfeited and got your bet back.",
+        GAME_COLORS.INFO
+      );
+
+      collector.stop();
+      activeGames.delete(message.author.id);
+
+      return interaction.update({ embeds: [finalEmbed], components: [] });
     }
 
     const index = parseInt(interaction.customId.split("_")[2]);
@@ -126,7 +160,7 @@ export async function pokerCommand(client, message, args) {
       game.board,
       game.playerCards,
       game.chosen,
-      `Pick 3 cards (${game.chosen.length}/3 selected).`
+      `Pick 3 cards (${game.chosen.length}/3 selected) or Forfeit.`
     );
 
     await interaction.update({ embeds: [updatedEmbed], components: [buildButtons()] });
