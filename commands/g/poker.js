@@ -27,17 +27,22 @@ export async function pokerCommand(client, message, args) {
     return message.reply("You don't have enough money.");
   }
 
+  // remove bet immediately
   user.balance -= bet;
   await saveUser(message.author.id, user);
 
+  // house collects bet
   await processGame(-bet);
 
+  // boost role check
   const SPECIAL_ROLE = process.env.ROLE_ID;
   const hasBoost = message.member.roles.cache.has(SPECIAL_ROLE);
 
+  // start new game
   const game = newPokerGame();
   activeGames.set(message.author.id, game);
 
+  // build card buttons
   function buildButtons() {
     return new ActionRowBuilder().addComponents(
       game.playerCards.map((card, i) => {
@@ -51,6 +56,7 @@ export async function pokerCommand(client, message, args) {
     );
   }
 
+  // starting embed
   const embed = pokerEmbed(
     "5 Card Draw",
     bet,
@@ -70,6 +76,7 @@ export async function pokerCommand(client, message, args) {
   });
 
   collector.on("collect", async interaction => {
+    // stop other players from clicking
     if (interaction.user.id !== message.author.id) {
       return interaction.reply({
         content: "This is not your poker game.",
@@ -80,6 +87,7 @@ export async function pokerCommand(client, message, args) {
     const index = parseInt(interaction.customId.split("_")[2]);
     const picked = game.playerCards[index];
 
+    // toggle selection
     if (game.chosen.includes(picked)) {
       game.chosen = game.chosen.filter(c => c !== picked);
     } else {
@@ -92,6 +100,7 @@ export async function pokerCommand(client, message, args) {
       game.chosen.push(picked);
     }
 
+    // finish once 3 are chosen
     if (game.chosen.length === 3) {
       collector.stop();
 
@@ -99,36 +108,58 @@ export async function pokerCommand(client, message, args) {
 
       let payout = 0;
       let outcomeText = "";
+      let outcomeLabel = "";
+      let embedColor = "";
 
+      // WIN
       if (result.winner === "player") {
         payout = bet * 2;
         user.balance += payout;
         await processGame(payout);
 
+        outcomeLabel = "WIN";
+        embedColor = "Green";
+
         outcomeText = `${result.playerScore.name} beats ${result.botScore.name}`;
       }
 
+      // LOSS
       else if (result.winner === "bot") {
+        outcomeLabel = "LOSS";
+        embedColor = "Red";
+
         outcomeText = `${result.botScore.name} beats ${result.playerScore.name}`;
       }
 
+      // TIE
       else {
         payout = bet;
         user.balance += payout;
         await processGame(payout);
 
-        outcomeText = `Tie. Both had ${result.playerScore.name}`;
+        outcomeLabel = "TIE";
+        embedColor = "Yellow";
+
+        outcomeText = `Both had ${result.playerScore.name}`;
       }
 
+      // save balance changes
       await saveUser(message.author.id, user);
 
+      // dealer reveal (only the 3 chosen cards)
+      const dealerPlayed = result.botFinal.slice(0, 3);
+
+      // final embed
       const finalEmbed = pokerEmbed(
         "Game Over",
         bet,
         game.board,
         game.playerCards,
         game.chosen,
-        `${outcomeText}\nPayout: $${payout}`
+        `${outcomeText}\nPayout: $${payout}`,
+        embedColor,
+        dealerPlayed,
+        outcomeLabel
       );
 
       return interaction.update({
@@ -137,8 +168,9 @@ export async function pokerCommand(client, message, args) {
       });
     }
 
+    // update embed while picking
     const updatedEmbed = pokerEmbed(
-      "Texas Hold'em",
+      "5 Card Draw",
       bet,
       game.board,
       game.playerCards,
