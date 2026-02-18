@@ -1,5 +1,3 @@
-// src/commands/g/poker.js
-
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -16,38 +14,25 @@ const activeGames = new Map();
 
 export async function pokerCommand(client, message, args) {
   const bet = parseInt(args[2]);
-
-  if (isNaN(bet) || bet <= 0) {
-    return message.reply("Usage: `!g poker <bet>`");
-  }
+  if (isNaN(bet) || bet <= 0) return message.reply("Usage: `!g poker <bet>`");
 
   const user = await getUser(message.author.id);
+  if (user.balance < bet) return message.reply("You don't have enough money.");
 
-  if (user.balance < bet) {
-    return message.reply("You don't have enough money.");
-  }
-
-  // remove bet immediately
   user.balance -= bet;
   await saveUser(message.author.id, user);
+  await processGame(-bet); // house collects bet
 
-  // house collects bet
-  await processGame(-bet);
-
-  // boost role check
   const SPECIAL_ROLE = process.env.ROLE_ID;
   const hasBoost = message.member.roles.cache.has(SPECIAL_ROLE);
 
-  // start new game
   const game = newPokerGame();
   activeGames.set(message.author.id, game);
 
-  // build card buttons
   function buildButtons() {
     return new ActionRowBuilder().addComponents(
       game.playerCards.map((card, i) => {
         const selected = game.chosen.includes(card);
-
         return new ButtonBuilder()
           .setCustomId(`poker_pick_${i}`)
           .setLabel(card)
@@ -56,7 +41,6 @@ export async function pokerCommand(client, message, args) {
     );
   }
 
-  // starting embed
   const embed = pokerEmbed(
     "5 Card Draw",
     bet,
@@ -66,41 +50,27 @@ export async function pokerCommand(client, message, args) {
     "Pick 3 cards to play."
   );
 
-  const sent = await message.reply({
-    embeds: [embed],
-    components: [buildButtons()]
-  });
+  const sent = await message.reply({ embeds: [embed], components: [buildButtons()] });
 
-  const collector = sent.createMessageComponentCollector({
-    time: 60000
-  });
+  const collector = sent.createMessageComponentCollector({ time: 60000 });
 
   collector.on("collect", async interaction => {
-    // stop other players from clicking
     if (interaction.user.id !== message.author.id) {
-      return interaction.reply({
-        content: "This is not your poker game.",
-        ephemeral: true
-      });
+      return interaction.reply({ content: "This is not your poker game.", ephemeral: true });
     }
 
     const index = parseInt(interaction.customId.split("_")[2]);
     const picked = game.playerCards[index];
 
-    // toggle selection
     if (game.chosen.includes(picked)) {
       game.chosen = game.chosen.filter(c => c !== picked);
     } else {
       if (game.chosen.length >= 3) {
-        return interaction.reply({
-          content: "You can only choose 3 cards.",
-          ephemeral: true
-        });
+        return interaction.reply({ content: "You can only choose 3 cards.", ephemeral: true });
       }
       game.chosen.push(picked);
     }
 
-    // finish once 3 are chosen
     if (game.chosen.length === 3) {
       collector.stop();
 
@@ -111,45 +81,30 @@ export async function pokerCommand(client, message, args) {
       let outcomeLabel = "";
       let embedColor = "";
 
-      // WIN
       if (result.winner === "player") {
         payout = bet * 2;
         user.balance += payout;
         await processGame(payout);
-
         outcomeLabel = "WIN";
         embedColor = GAME_COLORS.WIN;
-
         outcomeText = `${result.playerScore.name} beats ${result.botScore.name}`;
-      }
-
-      // LOSS
-      else if (result.winner === "bot") {
+      } else if (result.winner === "bot") {
         outcomeLabel = "LOSS";
         embedColor = GAME_COLORS.LOSS;
-
         outcomeText = `${result.botScore.name} beats ${result.playerScore.name}`;
-      }
-
-      // TIE
-      else {
+      } else {
         payout = bet;
         user.balance += payout;
         await processGame(payout);
-
         outcomeLabel = "TIE";
         embedColor = GAME_COLORS.TIE;
-
         outcomeText = `Both had ${result.playerScore.name}`;
       }
 
-      // save balance changes
       await saveUser(message.author.id, user);
 
-      // dealer reveal (only the 3 chosen cards)
       const dealerPlayed = result.botFinal.slice(0, 3);
 
-      // final embed
       const finalEmbed = pokerEmbed(
         "Game Over",
         bet,
@@ -162,13 +117,9 @@ export async function pokerCommand(client, message, args) {
         outcomeLabel
       );
 
-      return interaction.update({
-        embeds: [finalEmbed],
-        components: []
-      });
+      return interaction.update({ embeds: [finalEmbed], components: [] });
     }
 
-    // update embed while picking
     const updatedEmbed = pokerEmbed(
       "5 Card Draw",
       bet,
@@ -178,13 +129,8 @@ export async function pokerCommand(client, message, args) {
       `Pick 3 cards (${game.chosen.length}/3 selected).`
     );
 
-    await interaction.update({
-      embeds: [updatedEmbed],
-      components: [buildButtons()]
-    });
+    await interaction.update({ embeds: [updatedEmbed], components: [buildButtons()] });
   });
 
-  collector.on("end", () => {
-    activeGames.delete(message.author.id);
-  });
+  collector.on("end", () => activeGames.delete(message.author.id));
 }
