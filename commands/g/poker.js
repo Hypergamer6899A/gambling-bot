@@ -21,7 +21,7 @@ export async function pokerCommand(client, message, args) {
 
   user.balance -= bet;
   await saveUser(message.author.id, user);
-  await processGame(-bet); // house collects bet
+  await processGame(-bet);
 
   const SPECIAL_ROLE = process.env.ROLE_ID;
   const hasBoost = message.member.roles.cache.has(SPECIAL_ROLE);
