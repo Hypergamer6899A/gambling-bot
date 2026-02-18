@@ -118,7 +118,7 @@ export async function pokerCommand(client, message, args) {
         await processGame(payout);
 
         outcomeLabel = "WIN";
-        embedColor = "GAME_COLORS.WIN";
+        embedColor = GAME_COLORS.WIN;
 
         outcomeText = `${result.playerScore.name} beats ${result.botScore.name}`;
       }
@@ -126,7 +126,7 @@ export async function pokerCommand(client, message, args) {
       // LOSS
       else if (result.winner === "bot") {
         outcomeLabel = "LOSS";
-        embedColor = "GAME_COLORS.LOSS";
+        embedColor = GAME_COLORS.LOSS;
 
         outcomeText = `${result.botScore.name} beats ${result.playerScore.name}`;
       }
@@ -138,7 +138,7 @@ export async function pokerCommand(client, message, args) {
         await processGame(payout);
 
         outcomeLabel = "TIE";
-        embedColor = "GAME_COLORS.TIE";
+        embedColor = GAME_COLORS.TIE;
 
         outcomeText = `Both had ${result.playerScore.name}`;
       }
