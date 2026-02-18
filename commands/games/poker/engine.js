@@ -21,11 +21,16 @@ export function newPokerGame() {
   const deck = makeDeck();
   shuffle(deck);
 
+  const playerCards = draw(deck, 5);
+  const botCards = draw(deck, 5);
+  const extraBotCards = draw(deck, 2); // give bot 7 cards
+  const board = draw(deck, 5);
+
   return {
     deck,
-    board: draw(deck, 5),
-    playerCards: draw(deck, 5),
-    botCards: draw(deck, 5),
+    board,
+    playerCards,
+    botCards: [...botCards, ...extraBotCards], // bot has 7 cards
     chosen: [],
     finished: false
   };
@@ -33,19 +38,23 @@ export function newPokerGame() {
 
 export function botPick(botCards, board, boostedPlayer = false) {
   const allCombos = combinations(botCards, 3);
-  const bestCombo = allCombos.reduce((best, combo) => {
-    const score = scoreHand([...combo, ...board]);
-    const bestScore = scoreHand([...best, ...board]);
-    return score.rank > bestScore.rank ? combo : best;
-  });
 
-  // House advantage: 67% bot win chance
-  if (Math.random() < 0.67 && !boostedPlayer) {
-    return bestCombo;
-  } else {
-    // Player gets lucky ~33% of time
-    return allCombos[Math.floor(Math.random() * allCombos.length)];
+  let bestCombo = allCombos[0];
+  let bestScore = scoreHand([...bestCombo, ...board]);
+
+  for (const combo of allCombos) {
+    const score = scoreHand([...combo, ...board]);
+    if (score.rank > bestScore.rank) {
+      bestScore = score;
+      bestCombo = combo;
+    }
   }
+
+  // House advantage: ~67% bot win chance
+  if (!boostedPlayer && Math.random() < 0.67) return bestCombo;
+
+  // otherwise player gets lucky
+  return allCombos[Math.floor(Math.random() * allCombos.length)];
 }
 
 export function finishGame(game, boostedPlayer = false) {
@@ -58,7 +67,6 @@ export function finishGame(game, boostedPlayer = false) {
   const botScore = scoreHand(botFinal);
 
   let winner;
-  // Force bot win ~67% unless player boosted
   if (!boostedPlayer && Math.random() < 0.67) {
     winner = botScore.rank >= playerScore.rank ? "bot" : "player";
   } else {
