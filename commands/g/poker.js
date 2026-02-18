@@ -29,29 +29,29 @@ export async function pokerCommand(client, message, args) {
   const game = newPokerGame();
   activeGames.set(message.author.id, game);
 
-  function buildButtons() {
-    const row = new ActionRowBuilder();
-
-    game.playerCards.forEach((card, i) => {
-      const selected = game.chosen.includes(card);
-      row.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`poker_pick_${i}`)
-          .setLabel(card)
-          .setStyle(selected ? ButtonStyle.Success : ButtonStyle.Primary)
-      );
-    });
-
-    // Add Forfeit button
-    row.addComponents(
+function buildButtons() {
+  // Row for player cards
+  const cardRow = new ActionRowBuilder();
+  game.playerCards.forEach((card, i) => {
+    const selected = game.chosen.includes(card);
+    cardRow.addComponents(
       new ButtonBuilder()
-        .setCustomId("poker_forfeit")
-        .setLabel("Forfeit")
-        .setStyle(ButtonStyle.Danger)
+        .setCustomId(`poker_pick_${i}`)
+        .setLabel(card)
+        .setStyle(selected ? ButtonStyle.Success : ButtonStyle.Primary)
     );
+  });
 
-    return row;
-  }
+  // Row for Forfeit button
+  const forfeitRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("poker_forfeit")
+      .setLabel("Forfeit")
+      .setStyle(ButtonStyle.Danger)
+  );
+
+  return [cardRow, forfeitRow];
+}
 
   const embed = pokerEmbed(
     "5 Card Draw",
