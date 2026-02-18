@@ -87,5 +87,4 @@ export async function rouletteCommand(client, message, args) {
 return message.reply({
   embeds: [rouletteEmbed(roll, resultColor, choice, bet, win)]
 })};
-};
 }
