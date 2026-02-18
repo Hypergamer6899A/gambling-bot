@@ -6,6 +6,7 @@ export const GAME_COLORS = {
   WIN: 0x57F287,   // Green
   LOSS: 0xED4245,  // Red
   TIE: 0xFEE75C    // Yellow
+  INFO: 0x5865F2   // Blurple fallback
 };
 
 export const UTIL_COLORS = {
