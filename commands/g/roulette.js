@@ -84,7 +84,9 @@ export async function rouletteCommand(client, message, args) {
   await saveUser(message.author.id, user);
 
   // Send embed
-  return message.reply({
-    embeds: [rouletteEmbed(roll, choice, resultColor, bet, payout, win)]
-  });
+return message.reply({
+  embeds: [rouletteEmbed(roll, resultColor, choice, bet, win)]
+});
+
+};
 }
