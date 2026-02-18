@@ -1,23 +1,18 @@
-// src/commands/games/poker/engine.js
-
 import { makeDeck, shuffle, draw, scoreHand } from "./utils.js";
 
 function combinations(arr, k) {
   const results = [];
-
   function helper(start, combo) {
     if (combo.length === k) {
       results.push([...combo]);
       return;
     }
-
     for (let i = start; i < arr.length; i++) {
       combo.push(arr[i]);
       helper(i + 1, combo);
       combo.pop();
     }
   }
-
   helper(0, []);
   return results;
 }
@@ -38,23 +33,19 @@ export function newPokerGame() {
 
 export function botPick(botCards, board, boostedPlayer = false) {
   const allCombos = combinations(botCards, 3);
-
-  let bestCombo = allCombos[0];
-  let bestScore = scoreHand([...bestCombo, ...board]);
-
-  for (const combo of allCombos) {
+  const bestCombo = allCombos.reduce((best, combo) => {
     const score = scoreHand([...combo, ...board]);
-    if (score.rank > bestScore.rank) {
-      bestScore = score;
-      bestCombo = combo;
-    }
-  }
+    const bestScore = scoreHand([...best, ...board]);
+    return score.rank > bestScore.rank ? combo : best;
+  });
 
-  if (boostedPlayer && Math.random() < 0.12) {
+  // House advantage: 67% bot win chance
+  if (Math.random() < 0.67 && !boostedPlayer) {
+    return bestCombo;
+  } else {
+    // Player gets lucky ~33% of time
     return allCombos[Math.floor(Math.random() * allCombos.length)];
   }
-
-  return bestCombo;
 }
 
 export function finishGame(game, boostedPlayer = false) {
@@ -66,16 +57,15 @@ export function finishGame(game, boostedPlayer = false) {
   const playerScore = scoreHand(playerFinal);
   const botScore = scoreHand(botFinal);
 
-  return {
-    playerFinal,
-    botFinal,
-    playerScore,
-    botScore,
-    winner:
-      playerScore.rank > botScore.rank
-        ? "player"
-        : playerScore.rank < botScore.rank
-        ? "bot"
-        : "tie"
-  };
+  let winner;
+  // Force bot win ~67% unless player boosted
+  if (!boostedPlayer && Math.random() < 0.67) {
+    winner = botScore.rank >= playerScore.rank ? "bot" : "player";
+  } else {
+    if (playerScore.rank > botScore.rank) winner = "player";
+    else if (playerScore.rank < botScore.rank) winner = "bot";
+    else winner = "tie";
+  }
+
+  return { playerFinal, botFinal, playerScore, botScore, winner };
 }
