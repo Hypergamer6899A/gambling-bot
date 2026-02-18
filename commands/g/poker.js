@@ -30,19 +30,18 @@ export async function pokerCommand(client, message, args) {
   activeGames.set(message.author.id, game);
 
 function buildButtons() {
-  // Row 1: Player cards
+  // Row 1: player cards (max 5)
   const cardRow = new ActionRowBuilder();
   game.playerCards.forEach((card, i) => {
-    const selected = game.chosen.includes(card);
     cardRow.addComponents(
       new ButtonBuilder()
         .setCustomId(`poker_pick_${i}`)
         .setLabel(card)
-        .setStyle(selected ? ButtonStyle.Success : ButtonStyle.Primary)
+        .setStyle(game.chosen.includes(card) ? ButtonStyle.Success : ButtonStyle.Primary)
     );
   });
 
-  // Row 2: Forfeit button
+  // Row 2: forfeit button
   const forfeitRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("poker_forfeit")
@@ -50,10 +49,8 @@ function buildButtons() {
       .setStyle(ButtonStyle.Danger)
   );
 
-  // Return both rows in an array
   return [cardRow, forfeitRow];
 }
-
 
   const embed = pokerEmbed(
     "5 Card Draw",
