@@ -30,7 +30,7 @@ export async function pokerCommand(client, message, args) {
   activeGames.set(message.author.id, game);
 
 function buildButtons() {
-  // Row for player cards
+  // Row 1: Player cards
   const cardRow = new ActionRowBuilder();
   game.playerCards.forEach((card, i) => {
     const selected = game.chosen.includes(card);
@@ -42,7 +42,7 @@ function buildButtons() {
     );
   });
 
-  // Row for Forfeit button
+  // Row 2: Forfeit button
   const forfeitRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("poker_forfeit")
@@ -50,8 +50,10 @@ function buildButtons() {
       .setStyle(ButtonStyle.Danger)
   );
 
+  // Return both rows in an array
   return [cardRow, forfeitRow];
 }
+
 
   const embed = pokerEmbed(
     "5 Card Draw",
