@@ -52,6 +52,9 @@ function buildButtons() {
   return [cardRow, forfeitRow];
 }
 
+// sending initial message
+const sent = await message.reply({ embeds: [embed], components: [...buildButtons()] });
+
   const embed = pokerEmbed(
     "5 Card Draw",
     bet,
@@ -85,6 +88,7 @@ function buildButtons() {
         "You forfeited and got your bet back.",
         GAME_COLORS.INFO
       );
+      await interaction.update({ embeds: [updatedEmbed], components: [...buildButtons()] });
 
       collector.stop();
       activeGames.delete(message.author.id);
