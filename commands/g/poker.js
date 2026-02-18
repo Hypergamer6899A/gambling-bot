@@ -8,7 +8,7 @@ import {
 
 import { getUser, saveUser } from "../services/userCache.js";
 import { processGame } from "../utils/house.js";
-
+import { GAME_COLORS } from "../utils/embedColors.js";
 import { newPokerGame, finishGame } from "../games/poker/engine.js";
 import { pokerEmbed } from "../utils/pokerEmbed.js";
 
@@ -118,7 +118,7 @@ export async function pokerCommand(client, message, args) {
         await processGame(payout);
 
         outcomeLabel = "WIN";
-        embedColor = "Green";
+        embedColor = "GAME_COLORS.WIN";
 
         outcomeText = `${result.playerScore.name} beats ${result.botScore.name}`;
       }
@@ -126,7 +126,7 @@ export async function pokerCommand(client, message, args) {
       // LOSS
       else if (result.winner === "bot") {
         outcomeLabel = "LOSS";
-        embedColor = "Red";
+        embedColor = "GAME_COLORS.LOSS";
 
         outcomeText = `${result.botScore.name} beats ${result.playerScore.name}`;
       }
@@ -138,7 +138,7 @@ export async function pokerCommand(client, message, args) {
         await processGame(payout);
 
         outcomeLabel = "TIE";
-        embedColor = "Yellow";
+        embedColor = "GAME_COLORS.TIE";
 
         outcomeText = `Both had ${result.playerScore.name}`;
       }
