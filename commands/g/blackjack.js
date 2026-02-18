@@ -77,7 +77,7 @@ export async function blackjackCommand(client, message, args) {
           state.playerTotal,
           state.dealerTotal,
           state.streak,
-          "Green"
+          "WIN"
         )
       ]
     });
@@ -96,7 +96,7 @@ export async function blackjackCommand(client, message, args) {
         state.playerTotal,
         null,
         state.streak,
-        "Blurple"   // ✅ FIXED
+        "PLAYING"
       )
     ],
     components: [buttons()]
@@ -133,7 +133,7 @@ export async function blackjackCommand(client, message, args) {
               state.playerTotal,
               state.dealerTotal,
               state.streak,
-              "Red"
+              "LOSS"
             )
           ],
           components: [buttons()]
@@ -153,7 +153,7 @@ export async function blackjackCommand(client, message, args) {
             state.playerTotal,
             null,
             state.streak,
-            "Blurple"   // ✅ FIXED
+            "PLAYING"
           )
         ],
         components: [buttons()]
@@ -167,12 +167,12 @@ export async function blackjackCommand(client, message, args) {
       const result = await dealerDraw(state);
 
       let title = "Tie!";
-      let color = "Yellow";
+      let outcome = "TIE";
       let payout = 0;
 
       if (result === "player_win" || result === "dealer_bust") {
         title = "You Win!";
-        color = "Green";
+        outcome = "WIN";
 
         payout = bet * 2;
 
@@ -184,7 +184,7 @@ export async function blackjackCommand(client, message, args) {
 
       else if (result === "dealer_win") {
         title = "You Lose.";
-        color = "Red";
+        outcome = "LOSS";
 
         payout = 0;
         state.streak = 0;
@@ -192,7 +192,7 @@ export async function blackjackCommand(client, message, args) {
 
       else if (result === "tie") {
         title = "Tie!";
-        color = "Yellow";
+        outcome = "TIE";
 
         payout = bet;
 
@@ -215,7 +215,7 @@ export async function blackjackCommand(client, message, args) {
             state.playerTotal,
             state.dealerTotal,
             state.streak,
-            color
+            outcome
           )
         ],
         components: [buttons()]
@@ -240,7 +240,7 @@ export async function blackjackCommand(client, message, args) {
             state.playerTotal,
             null,
             state.streak,
-            "Red"
+            "LOSS"
           )
         ],
         components: []
