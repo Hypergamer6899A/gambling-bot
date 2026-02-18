@@ -1,50 +1,81 @@
 import { blackjackCommand } from "../g/blackjack.js";
 import { rouletteCommand } from "../g/roulette.js";
+import { pokerCommand } from "../g/poker.js";
+
 import { leaderboardCommand } from "../g/leaderboard.js";
 import { balanceCommand } from "../g/balance.js";
 import { giftCommand } from "../g/gift.js";
-import { helpCommand } from "../g/help.js";
 import { claimCommand } from "../g/claim.js";
-import { pokerCommand } from "../g/poker.js";
-
+import { helpCommand } from "../g/help.js";
 
 const PREFIX = "!g";
 
-export function messageRouter(client, message) {
+export async function messageRouter(client, message) {
   if (message.author.bot) return;
 
   const content = message.content.trim();
   if (!content.toLowerCase().startsWith(PREFIX)) return;
 
   const args = content.split(/\s+/);
+
+  // args[0] = "!g"
+  // args[1] = command
+  // args[2+] = parameters
+
   const cmd = args[1]?.toLowerCase();
 
-  switch (cmd) {
-    case "blackjack":
-      return blackjackCommand(client, message, args);
+  if (!cmd) {
+    return message.reply("Type `!g help` to see commands.");
+  }
 
-    case "roulette":
-      return rouletteCommand(client, message, args);
+  try {
+    switch (cmd) {
+
+      case "blackjack":
+      case "bj":
+        return await blackjackCommand(client, message, args);
+
+      case "roulette":
+      case "spin":
+        return await rouletteCommand(client, message, args);
 
       case "poker":
-      return pokerCommand(client, message, args);
+      case "5card":
+        return await pokerCommand(client, message, args);
 
-    case "leaderboard":
-      return leaderboardCommand(client, message, args);
+      case "balance":
+      case "bal":
+      case "wallet":
+        return await balanceCommand(client, message);
 
-    case "balance":
-      return balanceCommand(client, message);
+      case "gift":
+        return await giftCommand(client, message, args);
 
-    case "gift":
-      return giftCommand(client, message, args);
+      case "claim":
+      case "bankrupt":
+      case "broke":
+        return await claimCommand(client, message);
 
-    case "claim":
-      return claimCommand(client, message);
+      case "leaderboard":
+      case "lb":
+      case "lead":
+      case "scores":
+      case "top":
+        return await leaderboardCommand(client, message);
 
-    case "help":
-      return helpCommand(client, message);
+      case "help":
+        return await helpCommand(client, message);
 
-    default:
-      return message.reply("Unknown command. Use `!g help`.");
+      default:
+        return message.reply(
+          "Unknown command. Use `!g help` to see the full list."
+        );
+    }
+  } catch (err) {
+    console.error(`COMMAND ERROR (${cmd}):`, err);
+
+    return message.reply(
+      "That command crashed. Check console for the error."
+    );
   }
 }
