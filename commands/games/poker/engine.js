@@ -24,7 +24,7 @@ export function newPokerGame() {
 
   const playerCards = draw(deck, 5);
   const botCards = draw(deck, 5);
-  const extraBotCards = draw(deck, 1);
+  const extraBotCards = draw(deck, 2);
   const board = draw(deck, 5);
 
   return {
