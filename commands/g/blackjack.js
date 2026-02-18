@@ -18,9 +18,6 @@ import { processGame } from "../utils/house.js";
 export async function blackjackCommand(client, message, args) {
   const bet = parseInt(args[2]);
 
-  // =========================
-  // Bet Validation
-  // =========================
   if (isNaN(bet) || bet <= 0)
     return message.reply("Invalid bet amount.");
 
@@ -29,27 +26,16 @@ export async function blackjackCommand(client, message, args) {
   if (user.balance < bet)
     return message.reply("You don’t have enough money.");
 
-  // =========================
-  // Deduct Bet Immediately
-  // =========================
   user.balance -= bet;
   await saveUser(message.author.id, user);
 
-  // House gains bet immediately
   await processGame(-bet);
 
-  // Load streak
   const streak = user.blackjackStreak ?? 0;
 
-  // Start game
   const state = newBlackjackGame(bet, streak);
-
-  // Boost support
   state.member = message.member;
 
-  // =========================
-  // Buttons Builder
-  // =========================
   const buttons = () =>
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -66,12 +52,11 @@ export async function blackjackCommand(client, message, args) {
     );
 
   // ====================================================
-  // NATURAL BLACKJACK CHECK (First Deal)
+  // NATURAL BLACKJACK
   // ====================================================
   if (state.playerTotal === 21) {
     state.gameOver = true;
 
-    // Blackjack payout = 3:2
     const payout = Math.floor(bet * 2.5);
 
     user.balance += payout;
@@ -99,7 +84,7 @@ export async function blackjackCommand(client, message, args) {
   }
 
   // ====================================================
-  // Normal Game Start
+  // Game Start
   // ====================================================
   const gameMessage = await message.reply({
     embeds: [
@@ -110,21 +95,18 @@ export async function blackjackCommand(client, message, args) {
         state.dealerHand,
         state.playerTotal,
         null,
-        state.streak
+        state.streak,
+        "Blurple"   // ✅ FIXED
       )
     ],
     components: [buttons()]
   });
 
-  // Collector
   const collector = gameMessage.createMessageComponentCollector({
     filter: i => i.user.id === message.author.id,
     time: 60000
   });
 
-  // ====================================================
-  // Gameplay
-  // ====================================================
   collector.on("collect", async interaction => {
     const id = interaction.customId;
 
@@ -134,7 +116,6 @@ export async function blackjackCommand(client, message, args) {
     if (id === "hit") {
       const res = await playerHit(state);
 
-      // Player bust
       if (res.result === "bust") {
         state.gameOver = true;
         state.streak = 0;
@@ -162,7 +143,6 @@ export async function blackjackCommand(client, message, args) {
         return;
       }
 
-      // Continue game
       await interaction.update({
         embeds: [
           bjEmbed(
@@ -172,7 +152,8 @@ export async function blackjackCommand(client, message, args) {
             state.dealerHand,
             state.playerTotal,
             null,
-            state.streak
+            state.streak,
+            "Blurple"   // ✅ FIXED
           )
         ],
         components: [buttons()]
@@ -189,7 +170,6 @@ export async function blackjackCommand(client, message, args) {
       let color = "Yellow";
       let payout = 0;
 
-      // ✅ PLAYER WIN
       if (result === "player_win" || result === "dealer_bust") {
         title = "You Win!";
         color = "Green";
@@ -202,7 +182,6 @@ export async function blackjackCommand(client, message, args) {
         state.streak += 1;
       }
 
-      // ❌ DEALER WIN
       else if (result === "dealer_win") {
         title = "You Lose.";
         color = "Red";
@@ -211,7 +190,6 @@ export async function blackjackCommand(client, message, args) {
         state.streak = 0;
       }
 
-      // 🤝 TIE → Refund bet
       else if (result === "tie") {
         title = "Tie!";
         color = "Yellow";
@@ -222,7 +200,6 @@ export async function blackjackCommand(client, message, args) {
         await processGame(payout);
       }
 
-      // Save streak
       user.blackjackStreak = state.streak;
       await saveUser(message.author.id, user);
 
@@ -249,7 +226,7 @@ export async function blackjackCommand(client, message, args) {
   });
 
   // ====================================================
-  // Timeout End
+  // Timeout
   // ====================================================
   collector.on("end", () => {
     if (!state.gameOver) {
