@@ -29,32 +29,29 @@ export async function pokerCommand(client, message, args) {
   const game = newPokerGame();
   activeGames.set(message.author.id, game);
 
-function buildButtons() {
-  // Row 1: player cards (max 5)
-  const cardRow = new ActionRowBuilder();
-  game.playerCards.forEach((card, i) => {
-    cardRow.addComponents(
+  // Function to build buttons
+  function buildButtons() {
+    const cardRow = new ActionRowBuilder();
+    game.playerCards.forEach((card, i) => {
+      cardRow.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`poker_pick_${i}`)
+          .setLabel(card)
+          .setStyle(game.chosen.includes(card) ? ButtonStyle.Success : ButtonStyle.Primary)
+      );
+    });
+
+    const forfeitRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(`poker_pick_${i}`)
-        .setLabel(card)
-        .setStyle(game.chosen.includes(card) ? ButtonStyle.Success : ButtonStyle.Primary)
+        .setCustomId("poker_forfeit")
+        .setLabel("Forfeit")
+        .setStyle(ButtonStyle.Danger)
     );
-  });
 
-  // Row 2: forfeit button
-  const forfeitRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("poker_forfeit")
-      .setLabel("Forfeit")
-      .setStyle(ButtonStyle.Danger)
-  );
+    return [cardRow, forfeitRow];
+  }
 
-  return [cardRow, forfeitRow];
-}
-
-// sending initial message
-const sent = await message.reply({ embeds: [embed], components: [...buildButtons()] });
-
+  // Create initial embed
   const embed = pokerEmbed(
     "5 Card Draw",
     bet,
@@ -64,7 +61,8 @@ const sent = await message.reply({ embeds: [embed], components: [...buildButtons
     "Pick 3 cards to play or Forfeit."
   );
 
-  const sent = await message.reply({ embeds: [embed], components: [buildButtons()] });
+  // Send initial message
+  const sent = await message.reply({ embeds: [embed], components: buildButtons() });
 
   const collector = sent.createMessageComponentCollector({ time: 60000 });
 
@@ -88,14 +86,12 @@ const sent = await message.reply({ embeds: [embed], components: [...buildButtons
         "You forfeited and got your bet back.",
         GAME_COLORS.INFO
       );
-      await interaction.update({ embeds: [updatedEmbed], components: [...buildButtons()] });
 
-      collector.stop();
       activeGames.delete(message.author.id);
-
       return interaction.update({ embeds: [finalEmbed], components: [] });
     }
 
+    // Handle card selection
     const index = parseInt(interaction.customId.split("_")[2]);
     const picked = game.playerCards[index];
 
@@ -108,6 +104,7 @@ const sent = await message.reply({ embeds: [embed], components: [...buildButtons
       game.chosen.push(picked);
     }
 
+    // If 3 cards chosen, finish game
     if (game.chosen.length === 3) {
       collector.stop();
 
@@ -157,6 +154,7 @@ const sent = await message.reply({ embeds: [embed], components: [...buildButtons
       return interaction.update({ embeds: [finalEmbed], components: [] });
     }
 
+    // Update embed with current choices
     const updatedEmbed = pokerEmbed(
       "5 Card Draw",
       bet,
@@ -166,7 +164,7 @@ const sent = await message.reply({ embeds: [embed], components: [...buildButtons
       `Pick 3 cards (${game.chosen.length}/3 selected) or Forfeit.`
     );
 
-    await interaction.update({ embeds: [updatedEmbed], components: [buildButtons()] });
+    await interaction.update({ embeds: [updatedEmbed], components: buildButtons() });
   });
 
   collector.on("end", () => activeGames.delete(message.author.id));
