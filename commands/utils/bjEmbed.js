@@ -16,18 +16,19 @@ export function bjEmbed(
   playerHand = Array.isArray(playerHand) ? playerHand : [playerHand];
   dealerHand = Array.isArray(dealerHand) ? dealerHand : [dealerHand];
 
+  const dealerText =
+    dealerTotal === null
+      ? `${dealerHand[0]} | ??`
+      : dealerHand.join(" | ");
+
   return new EmbedBuilder()
     .setTitle(`${title}`)
-    .setColor(GAME_COLORS[outcome])
+    .setColor(GAME_COLORS[outcome] ?? GAME_COLORS.TIE)
     .setDescription(
       `**Your Hand (${playerTotal})**\n` +
         `${playerHand.join(" | ")}\n\n` +
         `**Dealer Hand (${dealerTotal === null ? "?" : dealerTotal})**\n` +
-        `${
-          dealerTotal === null
-            ? `${dealerHand[0]} | ??`
-            : dealerHand.join(" | ")
-        }\n\n` +
+        `${dealerText}\n\n` +
         `**Bet:** $${bet}\n` +
         `**Streak:** ${streak}`
     );
