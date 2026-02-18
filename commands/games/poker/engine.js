@@ -24,7 +24,7 @@ export function newPokerGame() {
 
   const playerCards = draw(deck, 5);
   const botCards = draw(deck, 5);
-  const extraBotCards = draw(deck, 2); // 7 total for bot
+  const extraBotCards = draw(deck, 1);
   const board = draw(deck, 5);
 
   return {
@@ -37,31 +37,31 @@ export function newPokerGame() {
   };
 }
 
-// pick the best 3-card combination for bot from 7 cards
+// pick a bot hand with occasional suboptimal choices
 export function botPick(botCards, board, boostedPlayer = false) {
   const allCombos = combinations(botCards, 3);
 
-  // compute 5-card hand for each combo + board and pick the strongest
-  let bestCombo = allCombos[0];
-  let bestScore = scoreHand([...bestCombo, ...board]);
+  // evaluate all combos and rank them
+  const scoredCombos = allCombos
+    .map(c => ({ combo: c, score: scoreHand([...c, ...board]) }))
+    .sort((a, b) => b.score.rank - a.score.rank); // best first
 
-  for (const combo of allCombos) {
-    const score = scoreHand([...combo, ...board]);
-    if (score.rank > bestScore.rank) {
-      bestScore = score;
-      bestCombo = combo;
+  let chosenCombo;
+
+  if (boostedPlayer) {
+    // player boost: pick a weaker hand occasionally
+    chosenCombo = scoredCombos[Math.min(scoredCombos.length - 1, Math.floor(Math.random() * 3) + 1)].combo;
+  } else {
+    // 2/3 chance best hand, 1/3 chance 2nd or 3rd best
+    if (Math.random() < 0.66) {
+      chosenCombo = scoredCombos[0].combo; // best
+    } else {
+      const secondThirdIndex = Math.min(scoredCombos.length - 1, Math.floor(Math.random() * 2) + 1);
+      chosenCombo = scoredCombos[secondThirdIndex].combo;
     }
   }
 
-  // If player has boost, 33% chance to pick a weaker hand
-  if (boostedPlayer && Math.random() < 0.33) {
-    const weakerCombos = allCombos.filter(
-      c => scoreHand([...c, ...board]).rank < bestScore.rank
-    );
-    if (weakerCombos.length) return weakerCombos[Math.floor(Math.random() * weakerCombos.length)];
-  }
-
-  return bestCombo;
+  return chosenCombo;
 }
 
 export function finishGame(game, boostedPlayer = false) {
@@ -75,12 +75,12 @@ export function finishGame(game, boostedPlayer = false) {
 
   let winner;
 
-  // Bot wins almost all games unless player is boosted
   if (!boostedPlayer) {
+    // normal rules: higher score wins, ties go to bot
     if (botScore.rank >= playerScore.rank) winner = "bot";
-    else winner = "bot"; // forcibly rig bot to win ties too
+    else winner = "player"; // rare chance when bot picks 2nd/3rd best
   } else {
-    // player has boost: use actual comparison
+    // boosted player: normal comparison
     if (playerScore.rank > botScore.rank) winner = "player";
     else if (playerScore.rank < botScore.rank) winner = "bot";
     else winner = "tie";
