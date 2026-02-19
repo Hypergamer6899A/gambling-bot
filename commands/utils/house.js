@@ -20,6 +20,7 @@ export async function getHouse() {
       name: BOT_NAME,
       balance: STARTING_BALANCE,
       blackjackStreak: 0,
+      jackpotPot: 0,
       isHouse: true,
     };
 
@@ -33,6 +34,11 @@ export async function getHouse() {
     house.balance = STARTING_BALANCE;
     await saveUser(BOT_ID, house);
   }
+  if (house.jackpotPot == null) {
+  house.jackpotPot = 0;
+  await saveUser(BOT_ID, house);
+}
+
 
   return house;
 }
