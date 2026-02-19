@@ -16,7 +16,7 @@ export function slotsEmbed(
   if (multiplier > 1) color = GAME_COLORS.WIN;
 
   return new EmbedBuilder()
-    .setTitle("🎰 Slot Machine")
+    .setTitle("Slot Machine")
     .setColor(color)
     .setDescription(
       `**Result**\n` +
