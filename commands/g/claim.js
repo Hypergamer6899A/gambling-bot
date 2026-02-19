@@ -21,7 +21,7 @@ export async function claimCommand(client, message) {
 
   if (user.lastClaim && now - user.lastClaim < twentyFourHours) {
     const nextClaim = new Date(user.lastClaim + twentyFourHours);
-    return message.reply(`You can claim again at <t:${Math.floor(nextClaim.getTime() / 1000)}:R>`);
+    return message.reply(`You can claim again <t:${Math.floor(nextClaim.getTime() / 1000)}:R>`);
   }
 
   // Give $100
