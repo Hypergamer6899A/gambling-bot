@@ -7,14 +7,13 @@ import {
 } from "discord.js";
 
 import { getUser, saveUser } from "../services/userCache.js";
-import { processGame } from "../utils/house.js";
+import { processGame, getHouse } from "../utils/house.js";
 
 import {
   newSlotsGame,
   doSpin,
   applySpinResult,
-  getTotalEarnings,
-  finishSlots
+  getTotalEarnings
 } from "../games/slots/engine.js";
 
 import { slotsEmbed } from "../utils/slotsEmbed.js";
@@ -36,11 +35,14 @@ export async function slotsCommand(client, message, args) {
   const SPECIAL_ROLE = process.env.ROLE_ID;
   const hasBoost = message.member.roles.cache.has(SPECIAL_ROLE);
 
-  // Start game
+  // Load house (Gambler)
+  const house = await getHouse();
+
+  // Start new slots session
   const game = newSlotsGame(bet);
   activeSlots.set(message.author.id, game);
 
-  // First spin cost
+  // Deduct bet immediately
   user.balance -= bet;
   await saveUser(message.author.id, user);
 
@@ -48,20 +50,19 @@ export async function slotsCommand(client, message, args) {
   await processGame(-bet);
 
   // Spin
-  const spin = doSpin(game, hasBoost);
+  let spin = doSpin(game, hasBoost);
+
+  // Handle payout
+  let payout = await handleSlotsPayout(user, house, bet, spin);
 
   // Track earnings
-  applySpinResult(game, spin.multiplier);
+  applySpinResult(game, spin.multiplier, payout);
 
-  // Pay winnings
-  if (spin.multiplier > 0) {
-    const payout = bet * spin.multiplier;
-    user.balance += payout;
+  // Save changes
+  await saveUser(message.author.id, user);
+  await saveUser(process.env.BOT_ID, house);
 
-    await processGame(payout);
-    await saveUser(message.author.id, user);
-  }
-
+  // Buttons
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("slots_spin")
@@ -74,6 +75,7 @@ export async function slotsCommand(client, message, args) {
       .setStyle(ButtonStyle.Danger)
   );
 
+  // Send initial embed
   const reply = await message.reply({
     embeds: [
       slotsEmbed(
@@ -81,12 +83,14 @@ export async function slotsCommand(client, message, args) {
         spin.slots,
         spin.multiplier,
         spin.outcome,
-        getTotalEarnings(game)
+        getTotalEarnings(game),
+        house.jackpotPot
       )
     ],
     components: [row]
   });
 
+  // Collector
   const collector = reply.createMessageComponentCollector({
     time: 60000
   });
@@ -98,19 +102,18 @@ export async function slotsCommand(client, message, args) {
         ephemeral: true
       });
 
-    // Spam prevention lock
+    // Spam prevention
     if (game.locked)
       return interaction.reply({
-        content: "Slow down champ, the reels are still spinning.",
+        content: "Slow down — the reels are still spinning.",
         ephemeral: true
       });
 
     game.locked = true;
 
-    // STOP
+    // STOP BUTTON
     if (interaction.customId === "slots_stop") {
       collector.stop();
-      finishSlots(game);
 
       game.locked = false;
 
@@ -122,13 +125,14 @@ export async function slotsCommand(client, message, args) {
             game.lastSpin.slots,
             game.lastSpin.multiplier,
             "CASHED OUT",
-            getTotalEarnings(game)
+            getTotalEarnings(game),
+            house.jackpotPot
           )
         ]
       });
     }
 
-    // SPIN AGAIN
+    // SPIN AGAIN BUTTON
     if (interaction.customId === "slots_spin") {
       const user = await getUser(message.author.id);
 
@@ -142,27 +146,28 @@ export async function slotsCommand(client, message, args) {
         });
       }
 
-      // Deduct bet
+      // Deduct bet again
       user.balance -= bet;
       await saveUser(message.author.id, user);
 
       // House gains bet
       await processGame(-bet);
 
-      // Spin
-      const spin = doSpin(game, hasBoost);
+      // Spin again
+      spin = doSpin(game, hasBoost);
 
-      // Track totals
-      applySpinResult(game, spin.multiplier);
+      // Reload house (pot updated)
+      const house = await getHouse();
 
-      // Pay winnings
-      if (spin.multiplier > 0) {
-        const payout = bet * spin.multiplier;
-        user.balance += payout;
+      // Handle payout
+      payout = await handleSlotsPayout(user, house, bet, spin);
 
-        await processGame(payout);
-        await saveUser(message.author.id, user);
-      }
+      // Track earnings
+      applySpinResult(game, spin.multiplier, payout);
+
+      // Save changes
+      await saveUser(message.author.id, user);
+      await saveUser(process.env.BOT_ID, house);
 
       game.locked = false;
 
@@ -173,7 +178,8 @@ export async function slotsCommand(client, message, args) {
             spin.slots,
             spin.multiplier,
             spin.outcome,
-            getTotalEarnings(game)
+            getTotalEarnings(game),
+            house.jackpotPot
           )
         ],
         components: [row]
@@ -186,4 +192,47 @@ export async function slotsCommand(client, message, args) {
   collector.on("end", () => {
     activeSlots.delete(message.author.id);
   });
+}
+
+/**
+ * Handles jackpot + normal payouts + half-loss pot feeding
+ */
+async function handleSlotsPayout(user, house, bet, spin) {
+  let payout = 0;
+
+  // ===== JACKPOT WIN 👑👑👑 =====
+  if (spin.jackpot) {
+    payout = house.jackpotPot;
+
+    user.balance += payout;
+
+    // Reset pot
+    house.jackpotPot = 0;
+
+    // House pays jackpot
+    await processGame(payout);
+
+    return payout;
+  }
+
+  // ===== NORMAL MULTIPLIER PAYOUT =====
+  if (spin.multiplier > 0) {
+    payout = Math.round(bet * spin.multiplier);
+
+    user.balance += payout;
+
+    // House pays winnings
+    await processGame(payout);
+
+    // HALF LOSS feeds jackpot pot 🍋🍋🍋
+    if (spin.multiplier === 0.5) {
+      const lostHalf = Math.round(bet * 0.5);
+      house.jackpotPot += lostHalf;
+    }
+
+    return payout;
+  }
+
+  // LOSS (no payout)
+  return 0;
 }
