@@ -81,75 +81,75 @@ export async function slotsCommand(client, message, args) {
     time: 60000
   });
 
-  collector.on("collect", async interaction) => {
-    if (interaction.user.id !== message.author.id)
-      return interaction.reply({
-        content: "This isn't your slot machine.",
-        ephemeral: true
-      })};
+collector.on("collect", async (interaction) => {
+  if (interaction.user.id !== message.author.id)
+    return interaction.reply({
+      content: "This isn't your slot machine.",
+      ephemeral: true
+    });
 
-    if (interaction.customId === "slots_stop") {
+  if (interaction.customId === "slots_stop") {
+    collector.stop();
+    finishSlots(game);
+
+    return interaction.update({
+      components: [],
+      embeds: [
+        slotsEmbed(
+          bet,
+          game.lastSpin.slots,
+          game.lastSpin.multiplier,
+          "CASHED OUT",
+          game.totalProfit
+        )
+      ]
+    });
+  }
+
+  if (interaction.customId === "slots_spin") {
+    const user = await getUser(message.author.id);
+
+    if (user.balance < bet) {
       collector.stop();
-      finishSlots(game);
-
       return interaction.update({
         components: [],
-        embeds: [
-          slotsEmbed(
-            bet,
-            spin.slots,
-            spin.multiplier,
-            "CASHED OUT",
-            game.totalProfit
-          )
-        ]
+        content: "You ran out of money to keep spinning."
       });
     }
 
-    if (interaction.customId === "slots_spin") {
-      const user = await getUser(message.author.id);
+    // Deduct bet again
+    user.balance -= bet;
+    await saveUser(message.author.id, user);
 
-      if (user.balance < bet) {
-        collector.stop();
-        return interaction.update({
-          components: [],
-          content: "You ran out of money to keep spinning."
-        });
-      }
+    // House gains bet
+    await processGame(-bet);
 
-      // Deduct bet again
-      user.balance -= bet;
+    // Spin again
+    const spin = doSpin(game);
+
+    // Pay winnings
+    if (spin.multiplier > 0) {
+      const payout = bet * spin.multiplier;
+      user.balance += payout;
+
+      await processGame(payout);
       await saveUser(message.author.id, user);
-
-      // House gains bet
-      await processGame(-bet);
-
-      // Spin again
-      const spin = doSpin(game);
-
-      // Pay winnings
-      if (spin.multiplier > 0) {
-        const payout = bet * spin.multiplier;
-        user.balance += payout;
-
-        await processGame(payout);
-        await saveUser(message.author.id, user);
-      }
-
-      return interaction.update({
-        embeds: [
-          slotsEmbed(
-            bet,
-            spin.slots,
-            spin.multiplier,
-            spin.outcome,
-            game.totalProfit
-          )
-        ],
-        components: [row]
-      });
     }
-  });
+
+    return interaction.update({
+      embeds: [
+        slotsEmbed(
+          bet,
+          spin.slots,
+          spin.multiplier,
+          spin.outcome,
+          game.totalProfit
+        )
+      ],
+      components: [row]
+    });
+  }
+});
 
   collector.on("end", () => {
     activeSlots.delete(message.author.id);
