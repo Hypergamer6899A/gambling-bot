@@ -24,6 +24,7 @@ export function slotsEmbed(
       `**Bet Per Spin:** $${bet}\n` +
       `**Multiplier:** x${multiplier}\n` +
       `**Outcome:** ${outcome}\n\n` +
-      `**Total Earnings:** $${earnings}`
+      `**Total Earnings:** $${earnings}\n\n` +
+      `**Jackpot Pot:** $${pot}`
     );
 }
