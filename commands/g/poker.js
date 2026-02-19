@@ -73,7 +73,7 @@ export async function pokerCommand(client, message, args) {
 
     // Handle Forfeit
     if (interaction.customId === "poker_forfeit") {
-      user.balance += bet; // refund
+      user.balance += Math.floor(bet/2); // refund
       await saveUser(message.author.id, user);
       await processGame(bet); // remove bet from house
 
