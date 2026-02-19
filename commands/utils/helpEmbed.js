@@ -12,6 +12,7 @@ export function helpEmbed() {
         `\`!g balance\` — Check your balance\n` +
         `\`!g gift <user> <amount>\` — Gift money\n\n` +
         `**Games**\n` +
+        `\`!g slots <amount>\`\n` +
         `\`!g blackjack <amount>\`\n` +
         `\`!g roulette <red|black|odd|even> <amount>\`\n` +
         `\`!g poker <amount>\`\n` +
