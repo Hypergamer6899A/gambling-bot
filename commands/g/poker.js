@@ -43,8 +43,8 @@ export async function pokerCommand(client, message, args) {
 
     const forfeitRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId("poker_forfeit")
-        .setLabel("Forfeit")
+        .setCustomId("Fold")
+        .setLabel("Fold")
         .setStyle(ButtonStyle.Danger)
     );
 
@@ -53,12 +53,12 @@ export async function pokerCommand(client, message, args) {
 
   // Create initial embed
   const embed = pokerEmbed(
-    "5 Card Draw",
+    "Quick Draw Poker",
     bet,
     game.board,
     game.playerCards,
     game.chosen,
-    "Pick 3 cards to play or Forfeit."
+    "Pick 3 cards to play or Fold."
   );
 
   // Send initial message
@@ -72,18 +72,18 @@ export async function pokerCommand(client, message, args) {
     }
 
     // Handle Forfeit
-    if (interaction.customId === "poker_forfeit") {
+    if (interaction.customId === "Fold") {
       user.balance += Math.floor(bet/2); // refund
       await saveUser(message.author.id, user);
       await processGame(bet); // remove bet from house
 
       const finalEmbed = pokerEmbed(
-        "Game Over",
+        "Folded",
         bet,
         game.board,
         game.playerCards,
         game.chosen,
-        "You forfeited and got half of your bet back.",
+        "You folded and got half of your bet back.",
         GAME_COLORS.INFO
       );
 
@@ -156,7 +156,7 @@ export async function pokerCommand(client, message, args) {
 
     // Update embed with current choices
     const updatedEmbed = pokerEmbed(
-      "5 Card Draw",
+      "Quick Draw Poker",
       bet,
       game.board,
       game.playerCards,
