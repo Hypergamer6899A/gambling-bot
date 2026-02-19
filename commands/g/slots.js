@@ -86,7 +86,7 @@ export async function slotsCommand(client, message, args) {
       return interaction.reply({
         content: "This isn't your slot machine.",
         ephemeral: true
-      });
+      }));
 
     if (interaction.customId === "slots_stop") {
       collector.stop();
