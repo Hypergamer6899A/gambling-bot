@@ -83,7 +83,7 @@ export async function pokerCommand(client, message, args) {
         game.board,
         game.playerCards,
         game.chosen,
-        "You forfeited and got your bet back.",
+        "You forfeited and got half of your bet back.",
         GAME_COLORS.INFO
       );
 
