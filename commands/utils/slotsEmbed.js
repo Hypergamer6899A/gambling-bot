@@ -8,7 +8,8 @@ export function slotsEmbed(
   slots,
   multiplier,
   outcome,
-  earnings
+  earnings,
+  pot
 ) {
   let color = GAME_COLORS.LOSS;
   if (multiplier < 1) color = GAME_COLORS.LOSS;
