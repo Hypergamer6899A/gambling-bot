@@ -1,7 +1,7 @@
 import { blackjackCommand } from "../g/blackjack.js";
 import { rouletteCommand } from "../g/roulette.js";
 import { pokerCommand } from "../g/poker.js";
-
+import { slotsCommand } from "../g/slots.js";
 import { leaderboardCommand } from "../g/leaderboard.js";
 import { balanceCommand } from "../g/balance.js";
 import { giftCommand } from "../g/gift.js";
@@ -35,8 +35,13 @@ export async function messageRouter(client, message) {
       case "bj":
         return await blackjackCommand(client, message, args);
 
-      case "roulette":
+      case "slots":
+      case "slot":
       case "spin":
+        return await slotsCommand(client, message, args);
+
+      case "roulette":
+      case "wheel":
         return await rouletteCommand(client, message, args);
 
       case "poker":
