@@ -8,10 +8,10 @@ export function slotsEmbed(
   slots,
   multiplier,
   outcome,
-  totalProfit
+  earnings
 ) {
   let color = GAME_COLORS.LOSS;
-
+  if (multiplier < 1) color = GAME_COLORS.LOSS;
   if (multiplier === 1) color = GAME_COLORS.TIE;
   if (multiplier > 1) color = GAME_COLORS.WIN;
 
@@ -21,9 +21,9 @@ export function slotsEmbed(
     .setDescription(
       `**Result**\n` +
       `${slots.join(" | ")}\n\n` +
-      `**Bet:** $${bet}\n` +
+      `**Bet Per Spin:** $${bet}\n` +
       `**Multiplier:** x${multiplier}\n` +
       `**Outcome:** ${outcome}\n\n` +
-      `**Session Profit:** $${totalProfit}`
+      `**Total Earnings:** $${earnings}`
     );
 }
