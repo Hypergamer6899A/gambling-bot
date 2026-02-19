@@ -92,7 +92,7 @@ export async function slotsCommand(client, message, args) {
 
   // Collector
   const collector = reply.createMessageComponentCollector({
-    time: 60000
+    idle: 60000
   });
 
   collector.on("collect", async (interaction) => {
