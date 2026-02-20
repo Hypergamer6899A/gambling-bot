@@ -5,7 +5,7 @@ import {
 } from "discord.js";
 
 import { getUser, saveUser } from "../services/userCache.js";
-import { processGame } from "../utils/house.js";
+import { processGame, getHouse } from "../utils/house.js";
 import { GAME_COLORS } from "../utils/embedColors.js";
 import { newPokerGame, finishGame } from "../games/poker/engine.js";
 import { pokerEmbed } from "../utils/pokerEmbed.js";
@@ -29,7 +29,6 @@ export async function pokerCommand(client, message, args) {
   const game = newPokerGame();
   activeGames.set(message.author.id, game);
 
-  // Function to build buttons
   function buildButtons() {
     const cardRow = new ActionRowBuilder();
     game.playerCards.forEach((card, i) => {
@@ -51,7 +50,6 @@ export async function pokerCommand(client, message, args) {
     return [cardRow, forfeitRow];
   }
 
-  // Create initial embed
   const embed = pokerEmbed(
     "Quick Draw Poker",
     bet,
@@ -61,110 +59,74 @@ export async function pokerCommand(client, message, args) {
     "Pick 3 cards to play or Fold."
   );
 
-  // Send initial message
   const sent = await message.reply({ embeds: [embed], components: buildButtons() });
-
   const collector = sent.createMessageComponentCollector({ time: 60000 });
 
   collector.on("collect", async interaction => {
-    if (interaction.user.id !== message.author.id) {
+    if (interaction.user.id !== message.author.id)
       return interaction.reply({ content: "This is not your poker game.", ephemeral: true });
-    }
 
-    // Handle Forfeit
+    const house = await getHouse();
+
     if (interaction.customId === "Fold") {
-      user.balance += Math.floor(bet/2); // refund
-      await saveUser(message.author.id, user);
-      await processGame(bet); // remove bet from house
+      const refund = Math.floor(bet / 2);
+      user.balance += refund;
+      await processGame(refund);
 
-      const finalEmbed = pokerEmbed(
-        "Folded",
-        bet,
-        game.board,
-        game.playerCards,
-        game.chosen,
-        "You folded and got half of your bet back.",
-        GAME_COLORS.INFO
-      );
+      const netLoss = bet - refund;
+      if (netLoss > 0)
+        house.jackpotPot += Math.round(netLoss * 0.2);
+
+      await saveUser(message.author.id, user);
+      await saveUser(process.env.BOT_ID, house);
 
       activeGames.delete(message.author.id);
-      return interaction.update({ embeds: [finalEmbed], components: [] });
+      return interaction.update({ components: [] });
     }
 
-    // Handle card selection
     const index = parseInt(interaction.customId.split("_")[2]);
     const picked = game.playerCards[index];
 
     if (game.chosen.includes(picked)) {
       game.chosen = game.chosen.filter(c => c !== picked);
     } else {
-      if (game.chosen.length >= 3) {
+      if (game.chosen.length >= 3)
         return interaction.reply({ content: "You can only choose 3 cards.", ephemeral: true });
-      }
       game.chosen.push(picked);
     }
 
-    // If 3 cards chosen, finish game
     if (game.chosen.length === 3) {
       collector.stop();
-
       const result = finishGame(game, hasBoost);
 
       let payout = 0;
-      let outcomeText = "";
-      let outcomeLabel = "";
-      let embedColor = "";
+      let netLoss = 0;
 
       if (result.winner === "player") {
         payout = bet * 2;
         user.balance += payout;
         await processGame(payout);
-        outcomeLabel = "WIN";
-        embedColor = GAME_COLORS.WIN;
-        outcomeText = `${result.playerScore.name} beats ${result.botScore.name}`;
-      } else if (result.winner === "bot") {
-        outcomeLabel = "LOSS";
-        embedColor = GAME_COLORS.LOSS;
-        outcomeText = `${result.botScore.name} beats ${result.playerScore.name}`;
-      } else {
+        netLoss = bet - payout;
+      }
+      else if (result.winner === "bot") {
+        netLoss = bet;
+      }
+      else {
         payout = bet;
         user.balance += payout;
         await processGame(payout);
-        outcomeLabel = "TIE";
-        embedColor = GAME_COLORS.TIE;
-        outcomeText = `Both had ${result.playerScore.name}`;
       }
 
+      if (netLoss > 0)
+        house.jackpotPot += Math.round(netLoss * 0.2);
+
       await saveUser(message.author.id, user);
+      await saveUser(process.env.BOT_ID, house);
 
-      const dealerPlayed = result.botFinal.slice(0, 3);
-
-      const finalEmbed = pokerEmbed(
-        "Game Over",
-        bet,
-        game.board,
-        game.playerCards,
-        game.chosen,
-        `${outcomeText}\nPayout: $${payout}`,
-        embedColor,
-        dealerPlayed,
-        outcomeLabel
-      );
-
-      return interaction.update({ embeds: [finalEmbed], components: [] });
+      return interaction.update({ components: [] });
     }
 
-    // Update embed with current choices
-    const updatedEmbed = pokerEmbed(
-      "Quick Draw Poker",
-      bet,
-      game.board,
-      game.playerCards,
-      game.chosen,
-      `Pick 3 cards (${game.chosen.length}/3 selected) or Forfeit.`
-    );
-
-    await interaction.update({ embeds: [updatedEmbed], components: buildButtons() });
+    await interaction.update({ embeds: [embed], components: buildButtons() });
   });
 
   collector.on("end", () => activeGames.delete(message.author.id));
