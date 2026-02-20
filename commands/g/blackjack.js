@@ -6,14 +6,13 @@ import {
 
 import { bjEmbed } from "../utils/bjEmbed.js";
 import { getUser, saveUser } from "../services/userCache.js";
-
 import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle
 } from "discord.js";
 
-import { processGame } from "../utils/house.js";
+import { processGame, getHouse } from "../utils/house.js";
 
 export async function blackjackCommand(client, message, args) {
   const bet = parseInt(args[2]);
@@ -22,229 +21,78 @@ export async function blackjackCommand(client, message, args) {
     return message.reply("Invalid bet amount.");
 
   const user = await getUser(message.author.id);
-
   if (user.balance < bet)
     return message.reply("You don’t have enough money.");
 
   user.balance -= bet;
   await saveUser(message.author.id, user);
-
   await processGame(-bet);
 
-  const streak = user.blackjackStreak ?? 0;
+  const house = await getHouse();
 
-  const state = newBlackjackGame(bet, streak);
+  const state = newBlackjackGame(bet, user.blackjackStreak ?? 0);
   state.member = message.member;
 
-  const buttons = () =>
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("hit")
-        .setLabel("Hit")
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(state.gameOver),
-
-      new ButtonBuilder()
-        .setCustomId("stand")
-        .setLabel("Stand")
-        .setStyle(ButtonStyle.Primary)
-        .setDisabled(state.gameOver)
-    );
-
-  // ====================================================
-  // NATURAL BLACKJACK
-  // ====================================================
   if (state.playerTotal === 21) {
-    state.gameOver = true;
-
     const payout = Math.floor(bet * 2.5);
-
     user.balance += payout;
     await processGame(payout);
 
-    state.streak += 1;
-    user.blackjackStreak = state.streak;
+    const netLoss = bet - payout;
+    if (netLoss > 0)
+      house.jackpotPot += Math.round(netLoss * 0.2);
 
     await saveUser(message.author.id, user);
+    await saveUser(process.env.BOT_ID, house);
 
-    return message.reply({
-      embeds: [
-        bjEmbed(
-          "Blackjack! (3:2 payout)",
-          bet,
-          state.playerHand,
-          state.dealerHand,
-          state.playerTotal,
-          state.dealerTotal,
-          state.streak,
-          "WIN"
-        )
-      ]
-    });
+    return message.reply({ embeds: [] });
   }
 
-  // ====================================================
-  // Game Start
-  // ====================================================
-  const gameMessage = await message.reply({
-    embeds: [
-      bjEmbed(
-        "Blackjack",
-        bet,
-        state.playerHand,
-        state.dealerHand,
-        state.playerTotal,
-        null,
-        state.streak,
-        "PLAYING"
-      )
-    ],
-    components: [buttons()]
-  });
-
+  const gameMessage = await message.reply({ embeds: [], components: [] });
   const collector = gameMessage.createMessageComponentCollector({
     filter: i => i.user.id === message.author.id,
     time: 60000
   });
 
   collector.on("collect", async interaction => {
-    const id = interaction.customId;
-
-    // =========================
-    // HIT
-    // =========================
-    if (id === "hit") {
+    if (interaction.customId === "hit") {
       const res = await playerHit(state);
 
       if (res.result === "bust") {
-        state.gameOver = true;
-        state.streak = 0;
-        user.blackjackStreak = 0;
-
-        await saveUser(message.author.id, user);
-
-        await interaction.update({
-          embeds: [
-            bjEmbed(
-              "You Busted!",
-              bet,
-              state.playerHand,
-              state.dealerHand,
-              state.playerTotal,
-              state.dealerTotal,
-              state.streak,
-              "LOSS"
-            )
-          ],
-          components: [buttons()]
-        });
-
+        house.jackpotPot += Math.round(bet * 0.2);
+        await saveUser(process.env.BOT_ID, house);
         collector.stop();
-        return;
       }
-
-      await interaction.update({
-        embeds: [
-          bjEmbed(
-            "Blackjack",
-            bet,
-            state.playerHand,
-            state.dealerHand,
-            state.playerTotal,
-            null,
-            state.streak,
-            "PLAYING"
-          )
-        ],
-        components: [buttons()]
-      });
     }
 
-    // =========================
-    // STAND
-    // =========================
-    if (id === "stand") {
+    if (interaction.customId === "stand") {
       const result = await dealerDraw(state);
 
-      let title = "Tie!";
-      let outcome = "TIE";
       let payout = 0;
+      let netLoss = 0;
 
       if (result === "player_win" || result === "dealer_bust") {
-        title = "You Win!";
-        outcome = "WIN";
-
         payout = bet * 2;
-
         user.balance += payout;
         await processGame(payout);
-
-        state.streak += 1;
+        netLoss = bet - payout;
       }
-
       else if (result === "dealer_win") {
-        title = "You Lose.";
-        outcome = "LOSS";
-
-        payout = 0;
-        state.streak = 0;
+        netLoss = bet;
       }
-
-      else if (result === "tie") {
-        title = "Tie!";
-        outcome = "TIE";
-
+      else {
         payout = bet;
-
         user.balance += payout;
         await processGame(payout);
       }
 
-      user.blackjackStreak = state.streak;
+      if (netLoss > 0)
+        house.jackpotPot += Math.round(netLoss * 0.2);
+
       await saveUser(message.author.id, user);
-
-      state.gameOver = true;
-
-      await interaction.update({
-        embeds: [
-          bjEmbed(
-            title,
-            bet,
-            state.playerHand,
-            state.dealerHand,
-            state.playerTotal,
-            state.dealerTotal,
-            state.streak,
-            outcome
-          )
-        ],
-        components: [buttons()]
-      });
+      await saveUser(process.env.BOT_ID, house);
 
       collector.stop();
-    }
-  });
-
-  // ====================================================
-  // Timeout
-  // ====================================================
-  collector.on("end", () => {
-    if (!state.gameOver) {
-      gameMessage.edit({
-        embeds: [
-          bjEmbed(
-            "Game ended due to inactivity.",
-            bet,
-            state.playerHand,
-            state.dealerHand,
-            state.playerTotal,
-            null,
-            state.streak,
-            "LOSS"
-          )
-        ],
-        components: []
-      }).catch(() => {});
     }
   });
 }
