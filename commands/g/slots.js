@@ -195,12 +195,14 @@ export async function slotsCommand(client, message, args) {
 }
 
 /**
- * Handles jackpot + normal payouts + half-loss pot feeding
+ * Handles jackpot + normal payouts
+ * 80% of losses stay with house
+ * 20% of any loss goes into jackpot pot
  */
 async function handleSlotsPayout(user, house, bet, spin) {
   let payout = 0;
 
-  // ===== JACKPOT WIN 👑👑👑 =====
+  // ===== JACKPOT WIN =====
   if (spin.jackpot) {
     payout = house.jackpotPot;
 
@@ -224,15 +226,21 @@ async function handleSlotsPayout(user, house, bet, spin) {
     // House pays winnings
     await processGame(payout);
 
-    // HALF LOSS feeds jackpot pot 🍋🍋🍋
-    if (spin.multiplier === 0.5) {
-      const lostHalf = Math.round(bet * 0.5);
-      house.jackpotPot += lostHalf;
+    // If player still lost money overall, feed 20% of the loss to pot
+    const netLoss = bet - payout;
+
+    if (netLoss > 0) {
+      const potContribution = Math.round(netLoss * 0.2);
+      house.jackpotPot += potContribution;
     }
 
     return payout;
   }
 
-  // LOSS (no payout)
+  // ===== FULL LOSS =====
+  // Player gets nothing, so full bet is loss
+  const potContribution = Math.round(bet * 0.2);
+  house.jackpotPot += potContribution;
+
   return 0;
 }
