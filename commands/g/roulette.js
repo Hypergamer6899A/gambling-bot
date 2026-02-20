@@ -1,6 +1,6 @@
 import { getUser, saveUser } from "../services/userCache.js";
 import { rouletteEmbed } from "../utils/rouletteEmbed.js";
-import { processGame } from "../utils/house.js";
+import { processGame, getHouse } from "../utils/house.js";
 
 export async function rouletteCommand(client, message, args) {
   const choice = args[2]?.toLowerCase();
@@ -16,35 +16,26 @@ export async function rouletteCommand(client, message, args) {
   if (user.balance < bet)
     return message.reply("You don't have enough money.");
 
-  // Deduct bet immediately
   user.balance -= bet;
   await saveUser(message.author.id, user);
-
-  // House gains bet immediately
   await processGame(-bet);
 
-  // Boost role luck
   const SPECIAL_ROLE = process.env.ROLE_ID;
   const hasBoost = message.member.roles.cache.has(SPECIAL_ROLE);
   const BOOST = 0.12;
 
   let roll = Math.floor(Math.random() * 37);
 
-  // Red number list
   const redNumbers = [
     1,3,5,7,9,12,14,16,18,
     19,21,23,25,27,30,32,34,36
   ];
 
-  // Helper functions
   const isRed = n => redNumbers.includes(n);
-  const colorOf = n =>
-    n === 0 ? "Green" : isRed(n) ? "Red" : "Black";
-
+  const colorOf = n => n === 0 ? "Green" : isRed(n) ? "Red" : "Black";
   const isOdd = n => n % 2 === 1;
   const isEven = n => n !== 0 && n % 2 === 0;
 
-  // Boosted reroll chance
   if (hasBoost) {
     const altRoll = Math.floor(Math.random() * 37);
 
@@ -61,30 +52,35 @@ export async function rouletteCommand(client, message, args) {
     }
   }
 
-  // Final result values
   const resultColor = colorOf(roll);
 
-  // Determine win
   let win = false;
   if (choice === "red" && resultColor === "Red") win = true;
   if (choice === "black" && resultColor === "Black") win = true;
   if (choice === "odd" && isOdd(roll)) win = true;
   if (choice === "even" && isEven(roll)) win = true;
 
-  // Payout
+  const house = await getHouse();
   let payout = 0;
+  let netLoss = 0;
+
   if (win) {
     payout = bet * 2;
     user.balance += payout;
-
-    // House pays winnings
     await processGame(payout);
+    netLoss = bet - payout;
+  } else {
+    netLoss = bet;
+  }
+
+  if (netLoss > 0) {
+    house.jackpotPot += Math.round(netLoss * 0.2);
   }
 
   await saveUser(message.author.id, user);
+  await saveUser(process.env.BOT_ID, house);
 
-  // Send embed
-return message.reply({
-  embeds: [rouletteEmbed(roll, resultColor, choice, bet, win)]
-});
+  return message.reply({
+    embeds: [rouletteEmbed(roll, resultColor, choice, bet, win)]
+  });
 }
