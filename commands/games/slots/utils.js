@@ -78,9 +78,13 @@ export function spinSlots() {
     outcome = "SMALL WIN x1.25";
 
     // Better payout if 💎 pair
-    if (symbols.includes("<:waxedlightlyweatheredcutcopperst:1429946087921287168>")) {
+    if (symbols.includes("<:scaryhorrormonster:1429946136784932864>")) {
       multiplier = 1.5;
       outcome = "NICE PAIR x1.5";
+    }
+    if (symbols.includes("<:sus:1429945939006853170>")) {
+      multiplier = 2;
+      outcome = "GREAT PAIR x2";
     }
   }
 
