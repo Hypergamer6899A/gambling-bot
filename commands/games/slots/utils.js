@@ -1,14 +1,14 @@
 // src/commands/games/slots/utils.js
 
-// Slot emoji pool with weighted chances
 const SYMBOLS = [
-  { emoji: "<:testblock:1429946118229196810>", weight: 30, multiplier: 1 },
-  { emoji: "<:Warden:1429946036809371769>", weight: 30, multiplier: 0.5 },
-  { emoji: "<:scaryhorrormonster:1429946136784932864>", weight: 25, multiplier: 3 },
-  { emoji: "<:sus:1429945939006853170>", weight: 12, multiplier: 5 },
-  { emoji: "<:waxedlightlyweatheredcutcopperst:1429946087921287168>", weight: 3, multiplier: 10 }
+  { emoji: "<:testblock:1429946118229196810>", weight: 32, triple: 1, pair: 1.25 },
+  { emoji: "<:Warden:1429946036809371769>", weight: 28, triple: 0.5, pair: 1.1 },
+  { emoji: "<:scaryhorrormonster:1429946136784932864>", weight: 24, triple: 3, pair: 1.5 },
+  { emoji: "<:sus:1429945939006853170>", weight: 13, triple: 5, pair: 2 },
+
+  // Jackpot symbol
+  { emoji: "<:waxedlightlyweatheredcutcopperst:1429946087921287168>", weight: 3, triple: 0, pair: 3, jackpot: true }
 ];
-// src/commands/games/slots/utils.js
 
 function pickSymbol() {
   const totalWeight = SYMBOLS.reduce((sum, s) => sum + s.weight, 0);
@@ -22,70 +22,53 @@ function pickSymbol() {
   return SYMBOLS[0].emoji;
 }
 
-export function spinSlots() {
-  const a = pickSymbol();
-  const b = pickSymbol();
-  const c = pickSymbol();
+function getSymbolData(emoji) {
+  return SYMBOLS.find(s => s.emoji === emoji);
+}
 
-  const slots = [a, b, c];
+export function spinSlots() {
+  const slots = [pickSymbol(), pickSymbol(), pickSymbol()];
+
+  const counts = {};
+  for (const s of slots) counts[s] = (counts[s] || 0) + 1;
+
+  const entries = Object.entries(counts);
+  const maxMatch = Math.max(...entries.map(e => e[1]));
 
   let multiplier = 0;
   let outcome = "LOSS";
   let jackpot = false;
 
-  // Count matches
-  const counts = {};
-  for (const s of slots) counts[s] = (counts[s] || 0) + 1;
-
-  const symbols = Object.keys(counts);
-  const maxMatch = Math.max(...Object.values(counts));
-
   // ===== TRIPLE MATCH =====
   if (maxMatch === 3) {
-    const sym = symbols[0];
+    const [emoji] = entries[0];
+    const sym = getSymbolData(emoji);
 
-    // Jackpot triple 👑
-    if (sym === "<:waxedlightlyweatheredcutcopperst:1429946087921287168>") {
+    if (sym.jackpot) {
       jackpot = true;
       multiplier = 0;
       outcome = "JACKPOT!!!";
     }
+    else {
+      multiplier = sym.triple;
 
-    // Half-loss triple 🍋
-    else if (sym === "<:Warden:1429946036809371769>") {
-      multiplier = 0.5;
-      outcome = "HALF LOSS";
-    }
-
-    // Normal triples
-    else if (sym === "<:testblock:1429946118229196810>") {
-      multiplier = 1;
-      outcome = "BREAK EVEN";
-    }
-    else if (sym === "<:scaryhorrormonster:1429946136784932864>") {
-      multiplier = 3;
-      outcome = "WIN x3";
-    }
-    else if (sym === "<:sus:1429945939006853170>") {
-      multiplier = 5;
-      outcome = "WIN x5";
+      if (multiplier < 1) outcome = "HALF LOSS";
+      else if (multiplier === 1) outcome = "BREAK EVEN";
+      else outcome = `WIN x${multiplier}`;
     }
   }
 
-  // ===== TWO MATCH =====
+  // ===== PAIR MATCH =====
   else if (maxMatch === 2) {
-    multiplier = 1.25;
-    outcome = "SMALL WIN x1.25";
+    const pairSymbol = entries.find(([_, count]) => count === 2)?.[0];
+    const sym = getSymbolData(pairSymbol);
 
-    // Better payout if 💎 pair
-    if (symbols.includes("<:scaryhorrormonster:1429946136784932864>")) {
-      multiplier = 1.5;
-      outcome = "NICE PAIR x1.5";
-    }
-    if (symbols.includes("<:sus:1429945939006853170>")) {
-      multiplier = 2;
-      outcome = "GREAT PAIR x2";
-    }
+    multiplier = sym.pair;
+
+    if (multiplier >= 3) outcome = `INSANE PAIR x${multiplier}`;
+    else if (multiplier >= 2) outcome = `GREAT PAIR x${multiplier}`;
+    else if (multiplier > 1.25) outcome = `NICE PAIR x${multiplier}`;
+    else outcome = `SMALL WIN x${multiplier}`;
   }
 
   return {
