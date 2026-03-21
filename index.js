@@ -2,7 +2,6 @@ import { Client, GatewayIntentBits, Partials } from "discord.js";
 import express from "express";
 
 import "./commands/services/firebase.js";
-import { loadCommands } from "./commands/utils/commandLoader.js";
 import { messageRouter } from "./commands/utils/router.js";
 import { updateTopThreeRole } from "./commands/services/roles.js";
 import {
