@@ -164,7 +164,7 @@ export function balanceEmbed(balance, jackpotPot) {
 
 // ─── Leaderboard ─────────────────────────────────────────────────────────────
 
-export function leaderboardEmbed(top5, callerEntry) {
+export function leaderboardEmbed(top5, callerEntry, houseEntry) {
   const medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"];
 
   let desc = top5
@@ -173,6 +173,10 @@ export function leaderboardEmbed(top5, callerEntry) {
 
   if (callerEntry) {
     desc += `\n\n━━━━━━━━━━━━━━\n**#${callerEntry.rank}** <@${callerEntry.id}> — **${fmt(callerEntry.balance)}**`;
+  }
+
+  if (houseEntry) {
+    desc += `\n\n━━━━━━━━━━━━━━\n🏦 **House** — Balance: **${fmt(houseEntry.balance)}** | Jackpot Pot: **${fmt(houseEntry.jackpotPot)}**`;
   }
 
   return new EmbedBuilder()
