@@ -1,33 +1,23 @@
 // commands/g/claim.js
-import { getFirestore } from "firebase-admin/firestore";
 import { getUser, saveUser } from "../services/userCache.js";
 
+const COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
 export async function claimCommand(client, message) {
-  const db = getFirestore();
-  const userId = message.author.id;
+  const user = await getUser(message.author.id);
+  const now  = Date.now();
 
-  // Get user
-  let user = await getUser(userId);
-  if (!user) {
-    user = { balance: 0, lastClaim: 0 };
+  if (user.balance > 0)
+    return message.reply("You still have money. Claim is only for broke people.");
+
+  if (user.lastClaim && now - user.lastClaim < COOLDOWN_MS) {
+    const next = Math.floor((user.lastClaim + COOLDOWN_MS) / 1000);
+    return message.reply(`You can claim again <t:${next}:R>.`);
   }
 
-  const now = Date.now();
-  const twentyFourHours = 24 * 60 * 60 * 1000;
-
-  if (user.balance > 0) {
-    return message.reply(`You still have money. Claim is only for broke people.`);
-  }
-
-  if (user.lastClaim && now - user.lastClaim < twentyFourHours) {
-    const nextClaim = new Date(user.lastClaim + twentyFourHours);
-    return message.reply(`You can claim again <t:${Math.floor(nextClaim.getTime() / 1000)}:R>`);
-  }
-
-  // Give $100
-  user.balance += 100;
+  user.balance  += 100;
   user.lastClaim = now;
-  await saveUser(userId, user);
+  await saveUser(message.author.id, user);
 
-  message.reply(`${message.author}, you claimed $100! Now go gamble with it!`);
+  return message.reply(`${message.author}, you claimed **$100**! Now go gamble!`);
 }
