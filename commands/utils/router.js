@@ -1,12 +1,13 @@
-import { blackjackCommand } from "../g/blackjack.js";
-import { rouletteCommand } from "../g/roulette.js";
-import { pokerCommand } from "../g/poker.js";
-import { slotsCommand } from "../g/slots.js";
+// commands/utils/router.js
+import { blackjackCommand }  from "../g/blackjack.js";
+import { rouletteCommand }   from "../g/roulette.js";
+import { pokerCommand }      from "../g/poker.js";
+import { slotsCommand }      from "../g/slots.js";
 import { leaderboardCommand } from "../g/leaderboard.js";
-import { balanceCommand } from "../g/balance.js";
-import { giftCommand } from "../g/gift.js";
-import { claimCommand } from "../g/claim.js";
-import { helpCommand } from "../g/help.js";
+import { balanceCommand }    from "../g/balance.js";
+import { giftCommand }       from "../g/gift.js";
+import { claimCommand }      from "../g/claim.js";
+import { helpCommand }       from "../g/help.js";
 
 const PREFIX = "!g";
 
@@ -17,20 +18,12 @@ export async function messageRouter(client, message) {
   if (!content.toLowerCase().startsWith(PREFIX)) return;
 
   const args = content.split(/\s+/);
+  const cmd  = args[1]?.toLowerCase();
 
-  // args[0] = "!g"
-  // args[1] = command
-  // args[2+] = parameters
-
-  const cmd = args[1]?.toLowerCase();
-
-  if (!cmd) {
-    return message.reply("Type `!g help` to see commands.");
-  }
+  if (!cmd) return message.reply("Type `!g help` to see all commands.");
 
   try {
     switch (cmd) {
-
       case "blackjack":
       case "bj":
         return await blackjackCommand(client, message, args);
@@ -72,15 +65,10 @@ export async function messageRouter(client, message) {
         return await helpCommand(client, message);
 
       default:
-        return message.reply(
-          "Unknown command. Use `!g help` to see the full list."
-        );
+        return message.reply("Unknown command. Use `!g help` to see the full list.");
     }
   } catch (err) {
-    console.error(`COMMAND ERROR (${cmd}):`, err);
-
-    return message.reply(
-      "That command crashed. Check console for the error."
-    );
+    console.error(`[router] Command error (${cmd}):`, err);
+    return message.reply("That command crashed. Check the console for the error.");
   }
 }
