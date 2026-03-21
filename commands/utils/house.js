@@ -1,47 +1,28 @@
-import { getFirestore } from "firebase-admin/firestore";
+// commands/utils/house.js
 import { getUser, saveUser } from "../services/userCache.js";
 
-const db = getFirestore();
-
-const BOT_ID = process.env.BOT_ID;
-const BOT_NAME = "Gambler";
-const STARTING_BALANCE = 100000;
+const BOT_ID          = process.env.BOT_ID;
+const STARTING_BALANCE = 100_000;
 
 if (!BOT_ID) {
-  throw new Error("BOT_ID is missing in your environment variables!");
+  throw new Error("BOT_ID is missing from environment variables.");
 }
+
+// ─── House account ────────────────────────────────────────────────────────────
 
 export async function getHouse() {
-  const ref = db.collection("users").doc(BOT_ID);
-  const snap = await ref.get();
-
-  if (!snap.exists) {
-    const house = {
-      name: BOT_NAME,
-      balance: STARTING_BALANCE,
-      blackjackStreak: 0,
-      jackpotPot: 0,
-      isHouse: true,
-    };
-
-    await saveUser(BOT_ID, house);
-    return house;
-  }
-
   const house = await getUser(BOT_ID);
 
-  if (house.balance == null) {
-    house.balance = STARTING_BALANCE;
-    await saveUser(BOT_ID, house);
-  }
-  if (house.jackpotPot == null) {
-  house.jackpotPot = 0;
-  await saveUser(BOT_ID, house);
-}
-
+  // Inject defaults if this is a fresh house account
+  house.name        ??= "Gambler";
+  house.balance     ??= STARTING_BALANCE;
+  house.jackpotPot  ??= 0;
+  house.isHouse     ??= true;
 
   return house;
 }
+
+// ─── Mutations ────────────────────────────────────────────────────────────────
 
 export async function updateHouse(amount) {
   const house = await getHouse();
@@ -50,7 +31,11 @@ export async function updateHouse(amount) {
   return house.balance;
 }
 
+/**
+ * Mirrors a player payout/loss against the house balance.
+ * Positive playerAmount = player won (house loses).
+ * Negative playerAmount = player lost (house gains).
+ */
 export async function processGame(playerAmount) {
-  // Player wins → house loses money
   await updateHouse(-playerAmount);
 }
