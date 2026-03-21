@@ -1,22 +1,14 @@
-// src/commands/g/slots.js
-
+// commands/g/slots.js
 import {
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle
+  ButtonStyle,
 } from "discord.js";
 
 import { getUser, saveUser } from "../services/userCache.js";
 import { processGame, getHouse } from "../utils/house.js";
-
-import {
-  newSlotsGame,
-  doSpin,
-  applySpinResult,
-  getTotalEarnings
-} from "../games/slots/engine.js";
-
-import { slotsEmbed } from "../utils/slotsEmbed.js";
+import { newSlotsGame, doSpin, applySpinResult, getTotalEarnings } from "../games/slots/engine.js";
+import { slotsEmbed } from "../utils/embeds.js";
 
 const activeSlots = new Map();
 
@@ -26,163 +18,94 @@ export async function slotsCommand(client, message, args) {
   if (isNaN(bet) || bet <= 0)
     return message.reply("Usage: `!g slots <bet>`");
 
-  const user = await getUser(message.author.id);
+  const user  = await getUser(message.author.id);
+  const house = await getHouse();
 
   if (user.balance < bet)
     return message.reply("You don't have enough money.");
 
-  // Boost role luck
   const SPECIAL_ROLE = process.env.ROLE_ID;
-  const hasBoost = message.member.roles.cache.has(SPECIAL_ROLE);
+  const hasBoost     = message.member.roles.cache.has(SPECIAL_ROLE);
 
-  // Load house (Gambler)
-  const house = await getHouse();
-
-  // Start new slots session
   const game = newSlotsGame(bet);
   activeSlots.set(message.author.id, game);
 
-  // Deduct bet immediately
+  // ── First spin ────────────────────────────────────────────────────────────
   user.balance -= bet;
   await saveUser(message.author.id, user);
-
-  // House gains bet
   await processGame(-bet);
 
-  // Spin
-  let spin = doSpin(game, hasBoost);
-
-  // Handle payout
-  let payout = await handleSlotsPayout(user, house, bet, spin);
-
-  // Track earnings
+  const spin   = doSpin(game, hasBoost);
+  const payout = await handleSlotsPayout(user, house, bet, spin);
   applySpinResult(game, spin.multiplier, payout);
 
-  // Save changes
   await saveUser(message.author.id, user);
   await saveUser(process.env.BOT_ID, house);
 
-  // Buttons
+  // ── Buttons ───────────────────────────────────────────────────────────────
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("slots_spin")
-      .setLabel("Spin Again")
-      .setStyle(ButtonStyle.Success),
-
-    new ButtonBuilder()
-      .setCustomId("slots_stop")
-      .setLabel("Cash Out")
-      .setStyle(ButtonStyle.Danger)
+    new ButtonBuilder().setCustomId("slots_spin").setLabel("Spin Again").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId("slots_stop").setLabel("Cash Out").setStyle(ButtonStyle.Danger),
   );
 
-  // Send initial embed
   const reply = await message.reply({
-    embeds: [
-      slotsEmbed(
-        bet,
-        spin.slots,
-        spin.multiplier,
-        spin.outcome,
-        getTotalEarnings(game),
-        house.jackpotPot
-      )
-    ],
-    components: [row]
+    embeds:     [slotsEmbed(bet, spin.slots, spin.multiplier, spin.outcome, getTotalEarnings(game), house.jackpotPot)],
+    components: [row],
   });
 
-  // Collector
-  const collector = reply.createMessageComponentCollector({
-    idle: 60000
-  });
+  const collector = reply.createMessageComponentCollector({ idle: 60_000 });
 
-  collector.on("collect", async (interaction) => {
+  collector.on("collect", async interaction => {
     if (interaction.user.id !== message.author.id)
-      return interaction.reply({
-        content: "This isn't your slot machine.",
-        ephemeral: true
-      });
+      return interaction.reply({ content: "This isn't your slot machine.", ephemeral: true });
 
-    // Spam prevention
     if (game.locked)
-      return interaction.reply({
-        content: "Slow down — the reels are still spinning.",
-        ephemeral: true
-      });
+      return interaction.reply({ content: "Slow down — the reels are still spinning.", ephemeral: true });
 
     game.locked = true;
 
-    // STOP BUTTON
+    // ── Cash out ──────────────────────────────────────────────────────────
     if (interaction.customId === "slots_stop") {
+      game.locked = false;
       collector.stop();
 
-      game.locked = false;
-
       return interaction.update({
+        embeds:     [slotsEmbed(bet, game.lastSpin.slots, game.lastSpin.multiplier, "CASHED OUT", getTotalEarnings(game), house.jackpotPot)],
         components: [],
-        embeds: [
-          slotsEmbed(
-            bet,
-            game.lastSpin.slots,
-            game.lastSpin.multiplier,
-            "CASHED OUT",
-            getTotalEarnings(game),
-            house.jackpotPot
-          )
-        ]
       });
     }
 
-    // SPIN AGAIN BUTTON
+    // ── Spin again ────────────────────────────────────────────────────────
     if (interaction.customId === "slots_spin") {
-      const user = await getUser(message.author.id);
+      const freshUser = await getUser(message.author.id);
 
-      if (user.balance < bet) {
-        collector.stop();
+      if (freshUser.balance < bet) {
         game.locked = false;
+        collector.stop();
 
         return interaction.update({
+          content:    "You ran out of money to keep spinning.",
           components: [],
-          content: "You ran out of money to keep spinning."
         });
       }
 
-      // Deduct bet again
-      user.balance -= bet;
-      await saveUser(message.author.id, user);
-
-      // House gains bet
+      freshUser.balance -= bet;
+      await saveUser(message.author.id, freshUser);
       await processGame(-bet);
 
-      // Spin again
-      spin = doSpin(game, hasBoost);
+      const freshHouse    = await getHouse();
+      const nextSpin      = doSpin(game, hasBoost);
+      const nextPayout    = await handleSlotsPayout(freshUser, freshHouse, bet, nextSpin);
+      applySpinResult(game, nextSpin.multiplier, nextPayout);
 
-      // Reload house (pot updated)
-      const house = await getHouse();
-
-      // Handle payout
-      payout = await handleSlotsPayout(user, house, bet, spin);
-
-      // Track earnings
-      applySpinResult(game, spin.multiplier, payout);
-
-      // Save changes
-      await saveUser(message.author.id, user);
-      await saveUser(process.env.BOT_ID, house);
+      await saveUser(message.author.id, freshUser);
+      await saveUser(process.env.BOT_ID, freshHouse);
 
       game.locked = false;
 
       return interaction.update({
-        embeds: [
-          slotsEmbed(
-            bet,
-            spin.slots,
-            spin.multiplier,
-            spin.outcome,
-            getTotalEarnings(game),
-            house.jackpotPot
-          )
-        ],
-        components: [row]
+        embeds:     [slotsEmbed(bet, nextSpin.slots, nextSpin.multiplier, nextSpin.outcome, getTotalEarnings(game), freshHouse.jackpotPot)],
+        components: [row],
       });
     }
 
@@ -194,53 +117,31 @@ export async function slotsCommand(client, message, args) {
   });
 }
 
-/**
- * Handles jackpot + normal payouts
- * 80% of losses stay with house
- * 20% of any loss goes into jackpot pot
- */
+// ─── Payout handler ───────────────────────────────────────────────────────────
+
 async function handleSlotsPayout(user, house, bet, spin) {
-  let payout = 0;
-
-  // ===== JACKPOT WIN =====
+  // Jackpot win — drain the pot
   if (spin.jackpot) {
-    payout = house.jackpotPot;
-
-    user.balance += payout;
-
-    // Reset pot
+    const payout     = house.jackpotPot;
+    user.balance    += payout;
     house.jackpotPot = 0;
-
-    // House pays jackpot
     await processGame(payout);
-
     return payout;
   }
 
-  // ===== NORMAL MULTIPLIER PAYOUT =====
+  // Normal multiplier win
   if (spin.multiplier > 0) {
-    payout = Math.round(bet * spin.multiplier);
-
+    const payout = Math.round(bet * spin.multiplier);
     user.balance += payout;
-
-    // House pays winnings
     await processGame(payout);
 
-    // If player still lost money overall, feed 20% of the loss to pot
     const netLoss = bet - payout;
-
-    if (netLoss > 0) {
-      const potContribution = Math.round(netLoss * 0.2);
-      house.jackpotPot += potContribution;
-    }
+    if (netLoss > 0) house.jackpotPot += Math.round(netLoss * 0.2);
 
     return payout;
   }
 
-  // ===== FULL LOSS =====
-  // Player gets nothing, so full bet is loss
-  const potContribution = Math.round(bet * 0.2);
-  house.jackpotPot += potContribution;
-
+  // Full loss — 20% of bet seeds the pot
+  house.jackpotPot += Math.round(bet * 0.2);
   return 0;
 }
