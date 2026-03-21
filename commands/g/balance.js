@@ -1,25 +1,13 @@
-import { EmbedBuilder } from "discord.js";
+// commands/g/balance.js
 import { getUser } from "../services/userCache.js";
 import { getHouse } from "../utils/house.js";
-import { UTIL_COLORS } from "../utils/embedColors.js";
+import { balanceEmbed } from "../utils/embeds.js";
 
 export async function balanceCommand(client, message) {
-  const user = await getUser(message.author.id);
+  const [user, house] = await Promise.all([
+    getUser(message.author.id),
+    getHouse(),
+  ]);
 
-  // Load Gambler pot
-  const house = await getHouse();
-
-  return message.reply({
-    embeds: [
-      new EmbedBuilder()
-        .setTitle("Your Balance")
-        .setColor(UTIL_COLORS.BLURPLE)
-        .setDescription(
-          `**Current Wallet**\n` +
-            `You currently have **$${user.balance}**.\n\n` +
-            `**Server Jackpot Pot**\n` +
-            `**$${house.jackpotPot}**`
-        )
-    ]
-  });
+  return message.reply({ embeds: [balanceEmbed(user.balance, house.jackpotPot)] });
 }
