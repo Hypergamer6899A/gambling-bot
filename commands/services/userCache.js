@@ -1,43 +1,48 @@
+// commands/services/userCache.js
 import { getFirestore } from "firebase-admin/firestore";
 
 const db = getFirestore();
-const users = new Map();
-const pendingSaves = new Map();
+
+// In-memory cache
+const cache = new Map();
+// Per-user debounce timers
+const saveTimers = new Map();
+
+const SAVE_DELAY_MS = 2000;
+
+// ─── Core ─────────────────────────────────────────────────────────────────────
 
 export async function getUser(id) {
-  if (users.has(id)) return users.get(id);
+  if (cache.has(id)) return cache.get(id);
 
-  const ref = db.collection("users").doc(id);
-  const snap = await ref.get();
+  const snap = await db.collection("users").doc(id).get();
+  const data = snap.exists ? snap.data() : {};
 
-  let data = snap.exists ? snap.data() : {
-    balance: 1000,
-    blackjackStreak: 0,
-  };
+  // Inject defaults for any missing fields
+  data.balance        ??= 1000;
+  data.blackjackStreak ??= 0;
 
-  // Inject defaults
-  if (data.balance == null) data.balance = 1000;
-  if (data.blackjackStreak == null) data.blackjackStreak = 0;
-
-  users.set(id, data);
+  cache.set(id, data);
   return data;
 }
 
 export async function saveUser(id, data) {
-  users.set(id, data);
+  // Always update the in-memory cache immediately
+  cache.set(id, data);
 
-  // if already scheduled, don't spam Firestore
-  if (pendingSaves.has(id)) return;
+  // Clear any existing timer and reset — last write in the window wins
+  if (saveTimers.has(id)) clearTimeout(saveTimers.get(id));
 
-  pendingSaves.set(id, true);
+  const timer = setTimeout(async () => {
+    saveTimers.delete(id);
+    await db.collection("users").doc(id).set(cache.get(id), { merge: true })
+      .catch(err => console.error(`[userCache] Failed to save ${id}:`, err));
+  }, SAVE_DELAY_MS);
 
-  setTimeout(async () => {
-    const ref = db.collection("users").doc(id);
-    await ref.set(users.get(id), { merge: true });
-
-    pendingSaves.delete(id);
-  }, 250);
+  saveTimers.set(id, timer);
 }
+
+// ─── Convenience helpers ──────────────────────────────────────────────────────
 
 export async function addBalance(id, amount) {
   const data = await getUser(id);
@@ -57,4 +62,3 @@ export async function getBalance(id) {
   const data = await getUser(id);
   return data.balance;
 }
-
