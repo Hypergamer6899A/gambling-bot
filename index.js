@@ -3,6 +3,7 @@ import express from "express";
 
 import "./commands/services/firebase.js";
 import { messageRouter } from "./commands/utils/router.js";
+import { startMemoryMonitor } from "./memoryMonitor.js";
 import { updateTopThreeRole } from "./commands/services/roles.js";
 import {
   addThinkingReaction,
@@ -37,6 +38,8 @@ client.once("ready", async () => {
     activities: [{ name: "!g help | LETS GO GAMBLING" }],
     status: "online"
   });
+
+  startMemoryMonitor();
 
   // Check env variable exists
   if (!GAMBLING_CHANNEL_ID) {
