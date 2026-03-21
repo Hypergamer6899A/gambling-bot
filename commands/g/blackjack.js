@@ -1,19 +1,13 @@
-//commands/g/blackjack.js
-import {
-  newBlackjackGame,
-  playerHit,
-  dealerDraw
-} from "../games/blackjack/engine.js";
-
-import { bjEmbed } from "../utils/bjEmbed.js";
-import { getUser, saveUser } from "../services/userCache.js";
-
+// commands/g/blackjack.js
 import {
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle
+  ButtonStyle,
 } from "discord.js";
 
+import { newBlackjackGame, playerHit, dealerDraw } from "../games/blackjack/engine.js";
+import { bjEmbed } from "../utils/embeds.js";
+import { getUser, saveUser } from "../services/userCache.js";
 import { processGame, getHouse } from "../utils/house.js";
 
 export async function blackjackCommand(client, message, args) {
@@ -24,198 +18,125 @@ export async function blackjackCommand(client, message, args) {
 
   const user = await getUser(message.author.id);
   if (user.balance < bet)
-    return message.reply("You don’t have enough money.");
+    return message.reply("You don't have enough money.");
 
+  // Deduct bet and fetch house upfront
   user.balance -= bet;
   await saveUser(message.author.id, user);
   await processGame(-bet);
 
   const house = await getHouse();
-
   const state = newBlackjackGame(bet, user.blackjackStreak ?? 0);
   state.member = message.member;
 
-  const buttons = () =>
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("hit")
-        .setLabel("Hit")
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(state.gameOver),
-
-      new ButtonBuilder()
-        .setCustomId("stand")
-        .setLabel("Stand")
-        .setStyle(ButtonStyle.Primary)
-        .setDisabled(state.gameOver)
-    );
-
-  // ========================================
-  // NATURAL BLACKJACK
-  // ========================================
+  // ── Natural blackjack ─────────────────────────────────────────────────────
   if (state.playerTotal === 21) {
-    const payout = Math.floor(bet * 2.5);
+    const payout  = Math.floor(bet * 2.5);
+    const netLoss = bet - payout;
 
     user.balance += payout;
     await processGame(payout);
 
-    const netLoss = bet - payout;
-    if (netLoss > 0)
-      house.jackpotPot += Math.round(netLoss * 0.2);
+    if (netLoss > 0) house.jackpotPot += Math.round(netLoss * 0.2);
 
-    state.gameOver = true;
-    state.streak += 1;
+    state.streak        += 1;
     user.blackjackStreak = state.streak;
 
     await saveUser(message.author.id, user);
     await saveUser(process.env.BOT_ID, house);
 
     return message.reply({
-      embeds: [
-        bjEmbed(
-          "Blackjack! (3:2 payout)",
-          bet,
-          state.playerHand,
-          state.dealerHand,
-          state.playerTotal,
-          state.dealerTotal,
-          state.streak,
-          "WIN"
-        )
-      ]
+      embeds: [bjEmbed("Blackjack! (3:2)", bet, state.playerHand, state.dealerHand, state.playerTotal, state.dealerTotal, state.streak, "WIN")],
     });
   }
 
-  // ========================================
-  // START GAME
-  // ========================================
+  // ── Build buttons ─────────────────────────────────────────────────────────
+  const buildRow = () =>
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("hit").setLabel("Hit").setStyle(ButtonStyle.Secondary).setDisabled(state.gameOver),
+      new ButtonBuilder().setCustomId("stand").setLabel("Stand").setStyle(ButtonStyle.Primary).setDisabled(state.gameOver),
+    );
+
+  // ── Initial message ───────────────────────────────────────────────────────
   const gameMessage = await message.reply({
-    embeds: [
-      bjEmbed(
-        "Blackjack",
-        bet,
-        state.playerHand,
-        state.dealerHand,
-        state.playerTotal,
-        null,
-        state.streak,
-        "PLAYING"
-      )
-    ],
-    components: [buttons()]
+    embeds:     [bjEmbed("Your Turn", bet, state.playerHand, state.dealerHand, state.playerTotal, null, state.streak, "PLAYING")],
+    components: [buildRow()],
   });
 
   const collector = gameMessage.createMessageComponentCollector({
     filter: i => i.user.id === message.author.id,
-    time: 60000
+    time:   60_000,
   });
 
   collector.on("collect", async interaction => {
+
+    // ── Hit ───────────────────────────────────────────────────────────────
     if (interaction.customId === "hit") {
-      const res = await playerHit(state);
+      const res = playerHit(state);
 
       if (res.result === "bust") {
-        state.gameOver = true;
-        state.streak = 0;
+        state.gameOver       = true;
+        state.streak         = 0;
         user.blackjackStreak = 0;
-
-        house.jackpotPot += Math.round(bet * 0.2);
+        house.jackpotPot    += Math.round(bet * 0.2);
 
         await saveUser(message.author.id, user);
         await saveUser(process.env.BOT_ID, house);
 
         await interaction.update({
-          embeds: [
-            bjEmbed(
-              "You Busted!",
-              bet,
-              state.playerHand,
-              state.dealerHand,
-              state.playerTotal,
-              state.dealerTotal,
-              state.streak,
-              "LOSS"
-            )
-          ],
-          components: [buttons()]
+          embeds:     [bjEmbed("Bust!", bet, state.playerHand, state.dealerHand, state.playerTotal, state.dealerTotal, state.streak, "LOSS")],
+          components: [buildRow()],
         });
 
         return collector.stop();
       }
 
-      await interaction.update({
-        embeds: [
-          bjEmbed(
-            "Blackjack",
-            bet,
-            state.playerHand,
-            state.dealerHand,
-            state.playerTotal,
-            null,
-            state.streak,
-            "PLAYING"
-          )
-        ],
-        components: [buttons()]
+      return interaction.update({
+        embeds:     [bjEmbed("Your Turn", bet, state.playerHand, state.dealerHand, state.playerTotal, null, state.streak, "PLAYING")],
+        components: [buildRow()],
       });
     }
 
+    // ── Stand ─────────────────────────────────────────────────────────────
     if (interaction.customId === "stand") {
-      const result = await dealerDraw(state);
+      const result = dealerDraw(state);
 
-      let payout = 0;
+      let payout  = 0;
       let netLoss = 0;
-      let title = "Tie!";
+      let title   = "Tie";
       let outcome = "TIE";
 
       if (result === "player_win" || result === "dealer_bust") {
-        payout = bet * 2;
-        user.balance += payout;
-        await processGame(payout);
-
+        payout        = bet * 2;
+        netLoss       = bet - payout;
+        title         = "You Win!";
+        outcome       = "WIN";
         state.streak += 1;
-        title = "You Win!";
-        outcome = "WIN";
-
-        netLoss = bet - payout;
-      }
-      else if (result === "dealer_win") {
+        user.balance += payout;
+        await processGame(payout);
+      } else if (result === "dealer_win") {
+        netLoss      = bet;
+        title        = "You Lose";
+        outcome      = "LOSS";
         state.streak = 0;
-        title = "You Lose.";
-        outcome = "LOSS";
-
-        netLoss = bet;
-      }
-      else {
-        payout = bet;
+      } else {
+        // Tie — return bet
+        payout       = bet;
         user.balance += payout;
         await processGame(payout);
       }
 
-      if (netLoss > 0)
-        house.jackpotPot += Math.round(netLoss * 0.2);
+      if (netLoss > 0) house.jackpotPot += Math.round(netLoss * 0.2);
 
+      state.gameOver       = true;
       user.blackjackStreak = state.streak;
 
       await saveUser(message.author.id, user);
       await saveUser(process.env.BOT_ID, house);
 
-      state.gameOver = true;
-
       await interaction.update({
-        embeds: [
-          bjEmbed(
-            title,
-            bet,
-            state.playerHand,
-            state.dealerHand,
-            state.playerTotal,
-            state.dealerTotal,
-            state.streak,
-            outcome
-          )
-        ],
-        components: [buttons()]
+        embeds:     [bjEmbed(title, bet, state.playerHand, state.dealerHand, state.playerTotal, state.dealerTotal, state.streak, outcome)],
+        components: [buildRow()],
       });
 
       collector.stop();
