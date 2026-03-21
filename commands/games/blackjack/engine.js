@@ -1,9 +1,8 @@
-//commands/games/blackjack/engine.js
+// commands/games/blackjack/engine.js
 import { drawCard, handValue } from "./utils.js";
 
-/**
- * Start a new blackjack game
- */
+// ─── New game ─────────────────────────────────────────────────────────────────
+
 export function newBlackjackGame(bet, streak = 0) {
   const playerHand = [drawCard(), drawCard()];
   const dealerHand = [drawCard(), drawCard()];
@@ -15,14 +14,13 @@ export function newBlackjackGame(bet, streak = 0) {
     dealerHand,
     playerTotal: handValue(playerHand),
     dealerTotal: handValue(dealerHand),
-    gameOver: false
+    gameOver: false,
   };
 }
 
-/**
- * Player hits
- */
-export async function playerHit(state) {
+// ─── Player hit ───────────────────────────────────────────────────────────────
+
+export function playerHit(state) {
   state.playerHand.push(drawCard());
   state.playerTotal = handValue(state.playerHand);
 
@@ -34,82 +32,51 @@ export async function playerHit(state) {
   return { result: "continue" };
 }
 
-/**
- * Dealer draws (Fixed + Balanced)
- */
-export async function dealerDraw(state) {
-  const target = state.playerTotal;
-  let dealerTotal = handValue(state.dealerHand);
+// ─── Dealer draw ──────────────────────────────────────────────────────────────
 
-  // =========================
-  // Boost Role Support
-  // =========================
+export function dealerDraw(state) {
   const SPECIAL_ROLE = process.env.ROLE_ID;
-  const hasBoost =
-    state.member?.roles?.cache?.has(SPECIAL_ROLE) || false;
+  const hasBoost     = state.member?.roles?.cache?.has(SPECIAL_ROLE) ?? false;
 
-  // Boost = dealer stands early sometimes
-  const BOOST = 0.15;
+  // Dealer difficulty scales gently with player streak (capped at 1.5x)
+  const difficulty   = Math.min(1 + state.streak * 0.05, 1.5);
+  const BOOST_CHANCE = 0.15; // chance dealer stands early when player has boost
 
-  // Difficulty scales gently
-  const difficulty = Math.min(1 + state.streak * 0.05, 1.5);
-
+  const suits  = ["♠", "♥", "♦", "♣"];
   const values = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
-  const suits = ["♠","♥","♦","♣"];
 
   /**
-   * Slight weighted pick
-   * Dealer is smarter, not psychic
+   * Weighted card pick — dealer is slightly smarter on a streak,
+   * preferring cards that get it closer to the player's total.
    */
-  const weightedPick = (target, current) => {
+  function weightedPick(target, current) {
     const pool = [];
-
     for (const v of values) {
-      let cardVal =
-        v === "A"
-          ? 11
-          : ["J", "Q", "K"].includes(v)
-          ? 10
-          : parseInt(v);
-
-      const diff = target - current;
-
-      let weight = 1;
-
-      if (state.streak > 0) {
-        if (cardVal <= diff) weight = 2;
-        else if (cardVal - diff <= 2) weight = 1;
-      }
-
+      const cardVal = v === "A" ? 11 : ["J","Q","K"].includes(v) ? 10 : parseInt(v, 10);
+      const diff    = target - current;
+      // On a streak: prefer cards that close the gap, otherwise weight is 1
+      const weight  = state.streak > 0 && cardVal <= diff ? 2 : 1;
       for (let i = 0; i < weight; i++) pool.push(v);
     }
+    const v = pool[Math.floor(Math.random() * pool.length)];
+    const s = suits[Math.floor(Math.random() * suits.length)];
+    return `${v}${s}`;
+  }
 
-    const val = pool[Math.floor(Math.random() * pool.length)];
-    const suit = suits[Math.floor(Math.random() * suits.length)];
+  let dealerTotal = handValue(state.dealerHand);
+  const target    = state.playerTotal;
 
-    return `${val}${suit}`;
-  };
+  while (dealerTotal < target && dealerTotal <= 21) {
+    // Boost: dealer may stand early in player's favor
+    if (hasBoost && Math.random() < BOOST_CHANCE) break;
 
-  // =========================
-  // Dealer Draw Loop
-  // =========================
-  while (dealerTotal < target && dealerTotal < 21) {
-
-    // Boost = dealer may stand early
-    if (hasBoost && Math.random() < BOOST) {
-      break;
-    }
-
-    // Dealer draws
-    const card =
-      state.streak === 0
-        ? drawCard()
-        : weightedPick(target, dealerTotal);
+    const card = state.streak === 0
+      ? drawCard()
+      : weightedPick(target, dealerTotal);
 
     state.dealerHand.push(card);
     dealerTotal = handValue(state.dealerHand);
 
-    // Dealer bust
     if (dealerTotal > 21) {
       state.dealerTotal = dealerTotal;
       return "dealer_bust";
@@ -118,11 +85,7 @@ export async function dealerDraw(state) {
 
   state.dealerTotal = dealerTotal;
 
-  // =========================
-  // Final Outcome
-  // =========================
-  if (dealerTotal > target) return "dealer_win";
-  if (dealerTotal < target) return "player_win";
-
+  if (dealerTotal > target)  return "dealer_win";
+  if (dealerTotal < target)  return "player_win";
   return "tie";
 }
