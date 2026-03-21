@@ -99,6 +99,9 @@ export async function blackjackCommand(client, message, args) {
 
     // ── Stand ─────────────────────────────────────────────────────────────
     if (interaction.customId === "stand") {
+      // Defer immediately — saveUser + processGame calls can exceed the 3s token window
+      await interaction.deferUpdate();
+
       const result = dealerDraw(state);
 
       let payout  = 0;
@@ -134,7 +137,8 @@ export async function blackjackCommand(client, message, args) {
       await saveUser(message.author.id, user);
       await saveUser(process.env.BOT_ID, house);
 
-      await interaction.update({
+      // editReply instead of update — required after deferUpdate
+      await interaction.editReply({
         embeds:     [bjEmbed(title, bet, state.playerHand, state.dealerHand, state.playerTotal, state.dealerTotal, state.streak, outcome)],
         components: [buildRow()],
       });
