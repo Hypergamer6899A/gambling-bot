@@ -20,7 +20,9 @@ export async function updateTopThreeRole(client) {
     .limit(3)
     .get();
 
-  const topThreeIds = new Set(snap.docs.map(doc => doc.id));
+  const topThreeIds = new Set(
+    snap.docs.map(doc => doc.id).filter(id => id !== process.env.BOT_ID)
+  );
 
   // Add role to top 3
   for (const id of topThreeIds) {
