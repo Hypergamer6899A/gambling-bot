@@ -1,7 +1,8 @@
+// commands/services/roles.js
 import { getFirestore } from "firebase-admin/firestore";
 
-const db = getFirestore();
-const ROLE_ID = process.env.ROLE_ID;
+const db      = getFirestore();
+const ROLE_ID  = process.env.ROLE_ID;
 const GUILD_ID = process.env.GUILD_ID;
 
 export async function updateTopThreeRole(client) {
@@ -11,26 +12,27 @@ export async function updateTopThreeRole(client) {
   const role = guild.roles.cache.get(ROLE_ID);
   if (!role) return;
 
-  const usersSnapshot = await db.collection("users")
+  // Fetch all members so cache is complete before we iterate
+  await guild.members.fetch();
+
+  const snap = await db.collection("users")
     .orderBy("balance", "desc")
     .limit(3)
     .get();
 
-  const topThreeIds = usersSnapshot.docs.map(doc => doc.id);
+  const topThreeIds = new Set(snap.docs.map(doc => doc.id));
 
+  // Add role to top 3
   for (const id of topThreeIds) {
-    try {
-      // fetch member directly by ID
-      const member = await guild.members.fetch(id).catch(() => null);
-      if (member && !member.roles.cache.has(role.id)) {
-        await member.roles.add(role).catch(() => {});
-      }
-    } catch {}
+    const member = guild.members.cache.get(id);
+    if (member && !member.roles.cache.has(ROLE_ID)) {
+      await member.roles.add(role).catch(() => {});
+    }
   }
 
-  // Now remove role from anyone who is NOT top three
+  // Remove role from everyone else who has it
   guild.members.cache.forEach(member => {
-    if (!topThreeIds.includes(member.id) && member.roles.cache.has(role.id)) {
+    if (!topThreeIds.has(member.id) && member.roles.cache.has(ROLE_ID)) {
       member.roles.remove(role).catch(() => {});
     }
   });
