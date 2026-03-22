@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Partials } from "discord.js";
+import { Client, GatewayIntentBits, Partials, Options } from "discord.js";
 import express from "express";
 import "./commands/services/firebase.js";
 import { messageRouter } from "./commands/utils/router.js";
@@ -6,9 +6,9 @@ import { updateTopThreeRole } from "./commands/services/roles.js";
 import { addThinkingReaction, removeThinkingReaction } from "./commands/services/reactionService.js";
 import { startMemoryMonitor } from "./memoryMonitor.js";
 
-const THINKING_EMOJI     = process.env.THINKING_EMOJI || "🤔";
-const CLIENT_TOKEN       = process.env.TOKEN;
-const PORT               = process.env.PORT || 3000;
+const THINKING_EMOJI      = process.env.THINKING_EMOJI || "🤔";
+const CLIENT_TOKEN        = process.env.TOKEN;
+const PORT                = process.env.PORT || 3000;
 const GAMBLING_CHANNEL_ID = process.env.CHANNEL_ID;
 
 const client = new Client({
@@ -21,20 +21,17 @@ const client = new Client({
     // and caching all reactions was a significant memory cost
   ],
   partials: [Partials.Channel, Partials.Message],
-  makeCache: Options => {
-    // Only keep what the bot actually needs cached
-    return Options.cacheWithLimits({
-      ...Options.defaultMakeCacheSettings,
-      MessageManager:         50,   // last 50 messages per channel (default: 200)
-      ReactionManager:        0,    // not needed — we removed the reactions intent
-      GuildEmojiManager:      0,    // bot doesn't use server emojis from cache
-      PresenceManager:        0,    // bot doesn't track member presences
-      VoiceStateManager:      0,    // no voice features
-      GuildInviteManager:     0,    // no invite tracking
-      ThreadManager:          0,    // no thread features
-      GuildStickerManager:    0,    // no sticker features
-    });
-  },
+  makeCache: Options.cacheWithLimits({
+    ...Options.defaultMakeCacheSettings,
+    MessageManager:      50,  // default is 200 per channel
+    ReactionManager:      0,  // not needed without reactions intent
+    GuildEmojiManager:    0,  // bot doesn't use server emojis from cache
+    PresenceManager:      0,  // bot doesn't track presences
+    VoiceStateManager:    0,  // no voice features
+    GuildInviteManager:   0,  // no invite tracking
+    ThreadManager:        0,  // no thread features
+    GuildStickerManager:  0,  // no sticker features
+  }),
 });
 
 // =========================
