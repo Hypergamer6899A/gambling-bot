@@ -1,0 +1,328 @@
+diff --git a/commands/g/blackjack.js b/commands/g/blackjack.js
+index 4a0c064..c5ebc98 100644
+--- a/commands/g/blackjack.js
++++ b/commands/g/blackjack.js
+@@ -68,6 +68,48 @@ export async function blackjackCommand(client, message, args) {
+     time:   60_000,
+   });
+ 
++  // Plays out the dealer's hand and settles balances. Set gameOver first,
++  // synchronously, so a timeout firing mid-resolution can never re-enter this.
++  async function resolveStand() {
++    state.gameOver = true;
++
++    const result = dealerDraw(state);
++
++    let payout  = 0;
++    let netLoss = 0;
++    let title   = "Tie";
++    let outcome = "TIE";
++
++    if (result === "player_win" || result === "dealer_bust") {
++      payout        = bet * 2;
++      netLoss       = bet - payout;
++      title         = "You Win!";
++      outcome       = "WIN";
++      state.streak += 1;
++      user.balance += payout;
++      await processGame(payout);
++    } else if (result === "dealer_win") {
++      netLoss      = bet;
++      title        = "You Lose";
++      outcome      = "LOSS";
++      state.streak = 0;
++    } else {
++      // Tie — return bet
++      payout       = bet;
++      user.balance += payout;
++      await processGame(payout);
++    }
++
++    if (netLoss > 0) house.jackpotPot += Math.round(netLoss * 0.2);
++
++    user.blackjackStreak = state.streak;
++
++    await saveUser(message.author.id, user);
++    await saveUser(process.env.BOT_ID, house);
++
++    return bjEmbed(title, bet, state.playerHand, state.dealerHand, state.playerTotal, state.dealerTotal, state.streak, outcome);
++  }
++
+   collector.on("collect", async interaction => {
+ 
+     // ── Hit ───────────────────────────────────────────────────────────────
+@@ -88,7 +130,7 @@ export async function blackjackCommand(client, message, args) {
+           components: [buildRow()],
+         });
+ 
+-        return collector.stop();
++        return collector.stop("resolved");
+       }
+ 
+       return interaction.update({
+@@ -101,49 +143,31 @@ export async function blackjackCommand(client, message, args) {
+     if (interaction.customId === "stand") {
+       // Defer immediately — saveUser + processGame calls can exceed the 3s token window
+       await interaction.deferUpdate();
++      collector.stop("resolved");
+ 
+-      const result = dealerDraw(state);
+-
+-      let payout  = 0;
+-      let netLoss = 0;
+-      let title   = "Tie";
+-      let outcome = "TIE";
+-
+-      if (result === "player_win" || result === "dealer_bust") {
+-        payout        = bet * 2;
+-        netLoss       = bet - payout;
+-        title         = "You Win!";
+-        outcome       = "WIN";
+-        state.streak += 1;
+-        user.balance += payout;
+-        await processGame(payout);
+-      } else if (result === "dealer_win") {
+-        netLoss      = bet;
+-        title        = "You Lose";
+-        outcome      = "LOSS";
+-        state.streak = 0;
+-      } else {
+-        // Tie — return bet
+-        payout       = bet;
+-        user.balance += payout;
+-        await processGame(payout);
+-      }
+-
+-      if (netLoss > 0) house.jackpotPot += Math.round(netLoss * 0.2);
+-
+-      state.gameOver       = true;
+-      user.blackjackStreak = state.streak;
+-
+-      await saveUser(message.author.id, user);
+-      await saveUser(process.env.BOT_ID, house);
++      const embed = await resolveStand();
+ 
+       // editReply instead of update — required after deferUpdate
+       await interaction.editReply({
+-        embeds:     [bjEmbed(title, bet, state.playerHand, state.dealerHand, state.playerTotal, state.dealerTotal, state.streak, outcome)],
++        embeds:     [embed],
+         components: [buildRow()],
+       });
++    }
++  });
++
++  // A player who never clicks Hit/Stand used to leave a message with live
++  // buttons that silently failed forever. Auto-resolve via Stand instead.
++  collector.on("end", async () => {
++    if (state.gameOver) return; // already resolved by a button click
+ 
+-      collector.stop();
++    try {
++      const embed = await resolveStand();
++      await gameMessage.edit({
++        embeds:     [embed],
++        components: [buildRow()],
++      });
++    } catch (err) {
++      console.error("[blackjack] Failed to auto-resolve a timed-out game:", err);
+     }
+   });
+ }
+diff --git a/commands/g/poker.js b/commands/g/poker.js
+index 49f6dd3..3115593 100644
+--- a/commands/g/poker.js
++++ b/commands/g/poker.js
+@@ -60,6 +60,28 @@ export async function pokerCommand(client, message, args) {
+ 
+   const collector = sent.createMessageComponentCollector({ time: 60_000 });
+ 
++  // Guards against the "end" handler re-resolving a game already settled
++  // by a button click (and vice versa).
++  let resolved = false;
++
++  // Refunds half the bet. Used for both a manual Fold and an auto-fold on timeout.
++  async function resolveFold() {
++    const house   = await getHouse();
++    const refund  = Math.floor(bet / 2);
++    const netLoss = bet - refund;
++
++    user.balance += refund;
++    await processGame(refund);
++
++    if (netLoss > 0) house.jackpotPot += Math.round(netLoss * 0.2);
++
++    await saveUser(message.author.id, user);
++    await saveUser(process.env.BOT_ID, house);
++    activeGames.delete(message.author.id);
++
++    return pokerEmbed("Folded", bet, game.board, game.playerCards, game.chosen, `Half your bet returned (${fmt(refund)}).`, COLOR.INFO);
++  }
++
+   collector.on("collect", async interaction => {
+     if (interaction.user.id !== message.author.id) {
+       return interaction.reply({ content: "This isn't your game.", ephemeral: true });
+@@ -67,21 +89,13 @@ export async function pokerCommand(client, message, args) {
+ 
+     // ── Fold ──────────────────────────────────────────────────────────────
+     if (interaction.customId === "Fold") {
+-      const house   = await getHouse();
+-      const refund  = Math.floor(bet / 2);
+-      const netLoss = bet - refund;
++      resolved = true;
++      collector.stop("resolved");
+ 
+-      user.balance += refund;
+-      await processGame(refund);
+-
+-      if (netLoss > 0) house.jackpotPot += Math.round(netLoss * 0.2);
+-
+-      await saveUser(message.author.id, user);
+-      await saveUser(process.env.BOT_ID, house);
+-      activeGames.delete(message.author.id);
++      const embed = await resolveFold();
+ 
+       return interaction.update({
+-        embeds:     [pokerEmbed("Folded", bet, game.board, game.playerCards, game.chosen, `Half your bet returned (${fmt(refund)}).`, COLOR.INFO)],
++        embeds:     [embed],
+         components: [],
+       });
+     }
+@@ -101,7 +115,8 @@ export async function pokerCommand(client, message, args) {
+ 
+     // ── Resolve on 3 chosen ───────────────────────────────────────────────
+     if (game.chosen.length === 3) {
+-      collector.stop();
++      resolved = true;
++      collector.stop("resolved");
+ 
+       const house  = await getHouse();
+       const result = finishGame(game, hasBoost);
+@@ -165,8 +180,18 @@ export async function pokerCommand(client, message, args) {
+     });
+   });
+ 
+-  collector.on("end", () => {
++  // A player who never picks 3 cards or Folds used to leave a message with
++  // live buttons that silently failed forever. Auto-fold instead.
++  collector.on("end", async () => {
+     activeGames.delete(message.author.id);
++    if (resolved) return;
++
++    try {
++      const embed = await resolveFold();
++      await sent.edit({ embeds: [embed], components: [] });
++    } catch (err) {
++      console.error("[poker] Failed to auto-resolve a timed-out game:", err);
++    }
+   });
+ }
+ 
+diff --git a/commands/g/slots.js b/commands/g/slots.js
+index c76ab33..ec5ca07 100644
+--- a/commands/g/slots.js
++++ b/commands/g/slots.js
+@@ -55,6 +55,10 @@ export async function slotsCommand(client, message, args) {
+ 
+   const collector = reply.createMessageComponentCollector({ idle: 60_000 });
+ 
++  // Every spin already fully settles the balance, so timeout only needs to
++  // clean up the message — it just guards against a redundant edit below.
++  let gameEnded = false;
++
+   collector.on("collect", async interaction => {
+     if (interaction.user.id !== message.author.id)
+       return interaction.reply({ content: "This isn't your slot machine.", ephemeral: true });
+@@ -67,7 +71,8 @@ export async function slotsCommand(client, message, args) {
+     // ── Cash out ──────────────────────────────────────────────────────────
+     if (interaction.customId === "slots_stop") {
+       game.locked = false;
+-      collector.stop();
++      gameEnded   = true;
++      collector.stop("resolved");
+ 
+       return interaction.update({
+         embeds:     [slotsEmbed(bet, game.lastSpin.slots, game.lastSpin.multiplier, "CASHED OUT", getTotalEarnings(game), house.jackpotPot)],
+@@ -81,7 +86,8 @@ export async function slotsCommand(client, message, args) {
+ 
+       if (freshUser.balance < bet) {
+         game.locked = false;
+-        collector.stop();
++        gameEnded   = true;
++        collector.stop("resolved");
+ 
+         return interaction.update({
+           content:    "You ran out of money to keep spinning.",
+@@ -112,8 +118,17 @@ export async function slotsCommand(client, message, args) {
+     game.locked = false;
+   });
+ 
+-  collector.on("end", () => {
++  // Money is already settled per-spin, so on idle timeout we just need to
++  // stop the buttons from sitting there clickable-but-dead.
++  collector.on("end", async () => {
+     activeSlots.delete(message.author.id);
++    if (gameEnded) return;
++
++    try {
++      await reply.edit({ components: [] });
++    } catch (err) {
++      console.error("[slots] Failed to clear buttons on session end:", err);
++    }
+   });
+ }
+ 
+diff --git a/commands/services/roles.js b/commands/services/roles.js
+index f5f1243..f2585c4 100644
+--- a/commands/services/roles.js
++++ b/commands/services/roles.js
+@@ -12,32 +12,37 @@ export async function updateTopThreeRole(client) {
+   const role = guild.roles.cache.get(ROLE_ID);
+   if (!role) return;
+ 
++  // Pull extra headroom beyond 3 — the house account almost always has the
++  // single highest balance, so limiting to exactly 3 before filtering it out
++  // used to leave real players short a spot on the leaderboard role.
+   const snap = await db.collection("users")
+     .orderBy("balance", "desc")
+-    .limit(3)
++    .limit(10)
+     .get();
+ 
+   const topThreeIds = new Set(
+-    snap.docs.map(doc => doc.id).filter(id => id !== process.env.BOT_ID)
++    snap.docs
++      .map(doc => doc.id)
++      .filter(id => id !== process.env.BOT_ID)
++      .slice(0, 3)
+   );
+ 
+   // Fetch only the top 3 members individually instead of the entire guild
+-  const topMembers = new Map();
+   for (const id of topThreeIds) {
+     const member = await guild.members.fetch(id).catch(() => null);
+-    if (member) {
+-      topMembers.set(id, member);
+-      if (!member.roles.cache.has(ROLE_ID)) {
+-        await member.roles.add(role).catch(() => {});
+-      }
++    if (member && !member.roles.cache.has(ROLE_ID)) {
++      await member.roles.add(role).catch(() => {});
+     }
+   }
+ 
+-  // For stripping the role, only fetch members who currently have it
+-  // rather than pulling the entire guild member list
+-  const roleMembers = await role.members.fetch
+-    ? role.members  // role.members is already a cached collection
+-    : new Map();
++  // role.members only reflects whoever happens to already be in the client's
++  // local cache. A member holding the role but missing from that cache
++  // wouldn't show up in role.members at all, so stripping could silently
++  // skip people who no longer belong. Fetch the full member list first so
++  // the cache — and role.members — is actually complete before we read it.
++  await guild.members.fetch().catch(err =>
++    console.error("[roles] Failed to refresh guild member cache:", err)
++  );
+ 
+   role.members.forEach(member => {
+     if (!topThreeIds.has(member.id)) {
